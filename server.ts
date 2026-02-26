@@ -22,32 +22,32 @@ app.use('/api/employees', employeesRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
-// --- Logique Serveur / Vite ---
-async function setupServer() {
+// --- Logique de démarrage ---
+async function start() {
+  // SI ON EST EN LOCAL : On lance Vite et le serveur .listen()
   if (process.env.NODE_ENV !== 'production') {
-    // Mode développement (Vite)
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
+    
     app.use(vite.middlewares);
     
     const PORT = 3000;
     app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Serveur local sur http://localhost:${PORT}`);
+      console.log(`🚀 Mode LOCAL : http://localhost:${PORT}`);
     });
   } else {
-    // Mode Production (Vercel gère le statique différemment, 
-    // mais on garde ceci pour la compatibilité)
+    // SI ON EST EN PRODUCTION (Vercel ou autre)
+    // On sert les fichiers statiques du dossier dist
     app.use(express.static('dist'));
-    // On ne met pas de app.get('*') ici car Vercel utilise son propre système de routing
   }
 }
 
-// Lancement uniquement en local
+// On n'exécute la fonction start() qu'en local
 if (process.env.NODE_ENV !== 'production') {
-  setupServer();
+  start();
 }
 
-// CRUCIAL POUR VERCEL
+// INDISPENSABLE POUR VERCEL
 export default app;
