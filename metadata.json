@@ -1,0 +1,5 @@
+{
+  "name": "FinManage - Gestion Finance & Masse Salariale",
+  "description": "Outil complet de gestion des dépenses, demandes de paiement et suivi de la masse salariale avec rôles Admin/Demandeur.",
+  "requestFramePermissions": []
+}
