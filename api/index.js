@@ -1,3 +1,3 @@
 // api/index.js
-import app from '../server.ts'; // On pointe bien vers le fichier .ts
+import app from '../server.ts'; // On pointe vers le fichier source .ts
 export default app;
