@@ -6,7 +6,11 @@ const router = express.Router();
 
 router.use(authenticateToken);
 
-// Get all expenses (admin sees all, requester sees own)
+/**
+ * GET /
+ * Liste des dépenses : Admin et Admin_Level_1 voient tout. 
+ * Les collaborateurs voient seulement leurs propres dépenses.
+ */
 router.get('/', async (req: AuthRequest, res) => {
   const { role, id } = req.user!;
   
@@ -20,7 +24,8 @@ router.get('/', async (req: AuthRequest, res) => {
       approver:users!expenses_approved_by_fkey(email)
     `);
 
-  if (role !== 'admin') {
+  // SÉCURITÉ : Si l'utilisateur n'est pas Admin ou Manager, on filtre par son ID
+  if (role !== 'admin' && role !== 'admin_level_1') {
     query = query.eq('user_id', id);
   }
 
@@ -28,7 +33,6 @@ router.get('/', async (req: AuthRequest, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
 
-  // Format response to match expected frontend structure
   const formattedExpenses = expenses.map(e => ({
     ...e,
     category_name: e.category?.name,
@@ -40,7 +44,10 @@ router.get('/', async (req: AuthRequest, res) => {
   res.json(formattedExpenses);
 });
 
-// Create expense request
+/**
+ * POST /
+ * Création d'une demande de frais
+ */
 router.post('/', async (req: AuthRequest, res) => {
   const { category_id, sub_category_id, amount, description, date, attachment } = req.body;
   const user_id = req.user!.id;
@@ -63,18 +70,27 @@ router.post('/', async (req: AuthRequest, res) => {
   res.status(201).json({ id: data.id, status: 'pending' });
 });
 
-// Update expense status (admin only)
+/**
+ * PATCH /:id/status
+ * Validation ou Rejet des frais.
+ * Autorisé pour Admin ET Admin_Level_1
+ */
 router.patch('/:id/status', async (req: AuthRequest, res) => {
-  if (req.user!.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  const { role, id: userId } = req.user!;
+  
+  // SÉCURITÉ : Seuls les Admins ou Managers peuvent valider
+  if (role !== 'admin' && role !== 'admin_level_1') {
+    return res.status(403).json({ error: 'Autorisation insuffisante' });
+  }
   
   const { status } = req.body;
   const { id } = req.params;
 
   if (!['pending', 'approved', 'rejected'].includes(status)) {
-    return res.status(400).json({ error: 'Invalid status' });
+    return res.status(400).json({ error: 'Statut invalide' });
   }
 
-  const approved_by = status === 'approved' ? req.user!.id : null;
+  const approved_by = (status === 'approved' || status === 'rejected') ? userId : null;
 
   const { error } = await supabase
     .from('expenses')
@@ -85,7 +101,10 @@ router.patch('/:id/status', async (req: AuthRequest, res) => {
   res.json({ success: true });
 });
 
-// Delete expense (admin or owner if pending)
+/**
+ * DELETE /:id
+ * Suppression par l'Admin, le Manager, ou le propriétaire si la demande est en attente.
+ */
 router.delete('/:id', async (req: AuthRequest, res) => {
   const { role, id: userId } = req.user!;
   const { id } = req.params;
@@ -96,9 +115,14 @@ router.delete('/:id', async (req: AuthRequest, res) => {
     .eq('id', id)
     .single();
 
-  if (fetchError || !expense) return res.status(404).json({ error: 'Expense not found' });
+  if (fetchError || !expense) return res.status(404).json({ error: 'Dépense introuvable' });
 
-  if (role === 'admin' || role === 'admin_level_1' || (expense.user_id === userId && expense.status === 'pending')) {
+  // Autorisation : Admin, Manager, ou propriétaire si statut 'pending'
+  const isAuthorized = role === 'admin' || 
+                       role === 'admin_level_1' || 
+                       (expense.user_id === userId && expense.status === 'pending');
+
+  if (isAuthorized) {
     const { error: deleteError } = await supabase
       .from('expenses')
       .delete()
@@ -108,7 +132,7 @@ router.delete('/:id', async (req: AuthRequest, res) => {
     return res.json({ success: true });
   }
 
-  res.status(403).json({ error: 'Unauthorized' });
+  res.status(403).json({ error: 'Non autorisé' });
 });
 
 export default router;

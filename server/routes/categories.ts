@@ -4,26 +4,47 @@ import { authenticateToken, AuthRequest, requireAdmin } from '../middleware/auth
 
 const router = express.Router();
 
+// Applique l'authentification à toutes les routes de ce fichier
 router.use(authenticateToken);
 
-// Get all categories with their sub-categories
+/**
+ * GET /
+ * Récupère toutes les catégories avec leurs sous-catégories
+ * Accessible par tous les utilisateurs connectés
+ */
 router.get('/', async (req: AuthRequest, res) => {
   const { data: categories, error } = await supabase
     .from('categories')
     .select(`
-      *,
-      subCategories:sub_categories(*)
+      id,
+      name,
+      sub_categories (
+        id,
+        name,
+        category_id
+      )
     `)
     .order('name', { ascending: true });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    console.error("Erreur récupération categories:", error);
+    return res.status(500).json({ error: error.message });
+  }
   
   res.json(categories);
 });
 
-// Add category (admin only)
+/**
+ * POST /
+ * Ajouter une famille (catégorie)
+ * Accessible par Admin et Admin_Level_1 via requireAdmin
+ */
 router.post('/', requireAdmin, async (req: AuthRequest, res) => {
   const { name } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ error: 'Le nom de la famille est requis' });
+  }
 
   const { data, error } = await supabase
     .from('categories')
@@ -31,16 +52,24 @@ router.post('/', requireAdmin, async (req: AuthRequest, res) => {
     .select()
     .single();
 
-  if (error) return res.status(400).json({ error: 'Category already exists or invalid data' });
+  if (error) {
+    console.error("Erreur insertion catégorie:", error);
+    return res.status(400).json({ error: 'La catégorie existe déjà ou les données sont invalides' });
+  }
+
   res.status(201).json(data);
 });
 
-// Add sub-category (admin only)
+/**
+ * POST /sub
+ * Ajouter une sous-famille (sous-catégorie)
+ * Accessible par Admin et Admin_Level_1 via requireAdmin
+ */
 router.post('/sub', requireAdmin, async (req: AuthRequest, res) => {
   const { category_id, name } = req.body;
 
   if (!category_id || !name) {
-    return res.status(400).json({ error: 'Category ID and name are required' });
+    return res.status(400).json({ error: 'L’ID de catégorie (famille) et le nom sont requis' });
   }
 
   const { data, error } = await supabase
@@ -49,7 +78,11 @@ router.post('/sub', requireAdmin, async (req: AuthRequest, res) => {
     .select()
     .single();
 
-  if (error) return res.status(400).json({ error: 'Sub-category already exists for this category or invalid data' });
+  if (error) {
+    console.error("Erreur insertion sous-catégorie:", error);
+    return res.status(400).json({ error: 'La sous-catégorie existe déjà pour cette famille ou les données sont invalides' });
+  }
+
   res.status(201).json(data);
 });
 

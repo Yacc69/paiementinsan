@@ -1,245 +1,257 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../api';
-import { Plus, UserPlus, Tag } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { 
+  UserPlus, Shield, Trash2, X, Plus, 
+  Layers, ChevronRight, User 
+} from 'lucide-react';
 
 export default function Admin() {
+  const { user } = useAuth();
+  
+  // RÈGLE : Seul l'Admin suprême voit l'onglet utilisateurs. 
+  // Le Manager (admin_level_1) arrive directement sur l'onglet Familles.
+  const isAdminSupréme = user?.role === 'admin';
+  const [activeTab, setActiveTab] = useState<'users' | 'categories'>(
+    isAdminSupréme ? 'users' : 'categories'
+  );
+  
   const [users, setUsers] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [showCatModal, setShowCatModal] = useState(false);
+  const [showSubCatModal, setShowSubCatModal] = useState(false);
 
-  // Form states
   const [newUser, setNewUser] = useState({ email: '', password: '', role: 'requester' });
-  const [newCategory, setNewCategory] = useState('');
-  const [newSubCategory, setNewSubCategory] = useState({ name: '', category_id: '' });
+  const [newCat, setNewCat] = useState({ name: '' });
+  const [newSubCat, setNewSubCat] = useState({ name: '', category_id: '' });
+  const [error, setError] = useState('');
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [usersData, categoriesData] = await Promise.all([
-        fetchApi('/api/auth/users'),
-        fetchApi('/api/categories')
-      ]);
-      setUsers(usersData);
-      setCategories(categoriesData);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+      const promises = [fetchApi('/api/categories')];
+      
+      // On ne charge la liste des utilisateurs QUE pour l'admin suprême
+      if (isAdminSupréme) {
+        promises.push(fetchApi('/api/auth/users'));
+      }
+      
+      const [catData, userData] = await Promise.all(promises);
+      setCategories(Array.isArray(catData) ? catData : []);
+      if (userData) setUsers(Array.isArray(userData) ? userData : []);
+    } catch (err) { 
+      console.error("Erreur de chargement des données Admin:", err); 
+    } finally { 
+      setLoading(false); 
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
-  const handleCreateUser = async (e: React.FormEvent) => {
+  // --- ACTIONS ---
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await fetchApi('/api/auth/register', {
-        method: 'POST',
-        body: JSON.stringify(newUser)
-      });
+      await fetchApi('/api/auth/register', { method: 'POST', body: JSON.stringify(newUser) });
+      setShowUserModal(false);
       setNewUser({ email: '', password: '', role: 'requester' });
       loadData();
-    } catch (err: any) {
-      alert(err.message);
-    }
+    } catch (err: any) { alert(err.message); }
   };
 
-  const handleCreateCategory = async (e: React.FormEvent) => {
+  const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await fetchApi('/api/categories', {
-        method: 'POST',
-        body: JSON.stringify({ name: newCategory })
-      });
-      setNewCategory('');
+      await fetchApi('/api/categories', { method: 'POST', body: JSON.stringify(newCat) });
+      setShowCatModal(false);
+      setNewCat({ name: '' });
       loadData();
-    } catch (err: any) {
-      alert(err.message);
-    }
+    } catch (err: any) { alert(err.message); }
   };
 
-  const handleCreateSubCategory = async (e: React.FormEvent) => {
+  const handleAddSubCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await fetchApi('/api/categories/sub', {
-        method: 'POST',
-        body: JSON.stringify(newSubCategory)
-      });
-      setNewSubCategory({ name: '', category_id: '' });
+      await fetchApi('/api/categories/sub', { method: 'POST', body: JSON.stringify(newSubCat) });
+      setShowSubCatModal(false);
+      setNewSubCat({ name: '', category_id: '' });
       loadData();
-    } catch (err: any) {
-      alert(err.message);
-    }
+    } catch (err: any) { alert(err.message); }
   };
+
+  if (loading) return <div className="p-10 text-center font-bold">Chargement de l'administration...</div>;
 
   return (
-    <div className="space-y-8">
-      <h2 className="text-2xl font-bold text-gray-900">Administration</h2>
-
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        {/* User Management */}
-        <div className="space-y-6">
-          <div className="bg-white shadow rounded-lg p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-              <UserPlus className="mr-2 h-5 w-5 text-blue-500" />
-              Créer un utilisateur
-            </h3>
-            <form onSubmit={handleCreateUser} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Email</label>
-                <input
-                  type="email"
-                  required
-                  value={newUser.email}
-                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Mot de passe</label>
-                <input
-                  type="password"
-                  required
-                  value={newUser.password}
-                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Rôle</label>
-                <select
-                  value={newUser.role}
-                  onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-                >
-                  <option value="requester">Demandeur</option>
-                  <option value="admin">Administrateur (Super)</option>
-                  <option value="admin_level_1">Administrateur Niveau 1</option>
-                </select>
-              </div>
-              <button
-                type="submit"
-                className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 font-medium"
-              >
-                Créer l'utilisateur
-              </button>
-            </form>
-          </div>
-
-          <div className="bg-white shadow rounded-lg overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">Utilisateurs existants</h3>
-            </div>
-            <ul className="divide-y divide-gray-200">
-              {users.map((u) => (
-                <li key={u.id} className="px-6 py-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{u.email}</p>
-                      <p className="text-xs text-gray-500 capitalize">{u.role}</p>
-                    </div>
-                    <span className="text-xs text-gray-400">
-                      Inscrit le {new Date(u.created_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
+    <div className="space-y-6 pb-20">
+      {/* HEADER & TABS NAVIGATION */}
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+        <div>
+          <h2 className="text-3xl font-black text-gray-900 tracking-tight">Configuration</h2>
+          <p className="text-gray-500 font-medium">Gérez la structure et les membres</p>
         </div>
-
-        {/* Category & Sub-category Management */}
-        <div className="space-y-6">
-          <div className="bg-white shadow rounded-lg p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-              <Tag className="mr-2 h-5 w-5 text-green-500" />
-              Gestion des Familles
-            </h3>
-            
-            <form onSubmit={handleCreateCategory} className="space-y-4 mb-8 pb-8 border-b">
-              <p className="text-sm font-semibold text-gray-600">Nouvelle Famille</p>
-              <div>
-                <input
-                  type="text"
-                  required
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-                  placeholder="ex: Marketing, IT, Voyage..."
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 font-medium"
-              >
-                Ajouter la famille
-              </button>
-            </form>
-
-            <form onSubmit={handleCreateSubCategory} className="space-y-4">
-              <p className="text-sm font-semibold text-gray-600">Nouvelle Sous-Famille</p>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Famille parente</label>
-                <select
-                  required
-                  value={newSubCategory.category_id}
-                  onChange={(e) => setNewSubCategory({ ...newSubCategory, category_id: e.target.value })}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-                >
-                  <option value="">Sélectionner</option>
-                  {categories.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Nom de la sous-famille</label>
-                <input
-                  type="text"
-                  required
-                  value={newSubCategory.name}
-                  onChange={(e) => setNewSubCategory({ ...newSubCategory, name: e.target.value })}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-                  placeholder="ex: Publicité, Logiciels, Train..."
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 font-medium"
-              >
-                Ajouter la sous-famille
-              </button>
-            </form>
-          </div>
-
-          <div className="bg-white shadow rounded-lg overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">Structure des familles</h3>
-            </div>
-            <div className="p-6 space-y-4">
-              {categories.map((cat) => (
-                <div key={cat.id} className="border rounded-lg p-3">
-                  <div className="font-bold text-gray-900 flex items-center">
-                    <Tag className="h-4 w-4 mr-2 text-green-500" />
-                    {cat.name}
-                  </div>
-                  {cat.subCategories && cat.subCategories.length > 0 && (
-                    <div className="mt-2 ml-6 flex flex-wrap gap-2">
-                      {cat.subCategories.map((sub: any) => (
-                        <span key={sub.id} className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-md border border-blue-100">
-                          {sub.name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
+        
+        <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
+          {isAdminSupréme && (
+            <button 
+              onClick={() => setActiveTab('users')} 
+              className={`flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'users' ? 'bg-white shadow text-indigo-600' : 'text-gray-500'}`}
+            >
+              <User size={18} /> Utilisateurs
+            </button>
+          )}
+          <button 
+            onClick={() => setActiveTab('categories')} 
+            className={`flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'categories' ? 'bg-white shadow text-indigo-600' : 'text-gray-500'}`}
+          >
+            <Layers size={18} /> Familles & Sous-familles
+          </button>
         </div>
       </div>
+
+      {/* --- ONGLET UTILISATEURS (Visible uniquement Admin Suprême) --- */}
+      {activeTab === 'users' && isAdminSupréme && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-in fade-in duration-300">
+          <div className="p-4 flex justify-end bg-gray-50 border-b">
+            <button onClick={() => setShowUserModal(true)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 shadow-lg">
+              <UserPlus size={18} /> Nouveau Membre
+            </button>
+          </div>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-4 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Email</th>
+                <th className="px-6 py-4 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Rôle</th>
+                <th className="px-6 py-4 text-right text-xs font-black text-gray-400 uppercase tracking-widest">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 bg-white">
+              {users.map((u) => (
+                <tr key={u.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-6 py-4 font-bold text-gray-900">{u.email}</td>
+                  <td className="px-6 py-4">
+                    <span className={`px-3 py-1 rounded-lg text-xs font-bold ${u.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                      {u.role.toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <button className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={18}/></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* --- ONGLET FAMILLES (Accessible Admin et Manager) --- */}
+      {activeTab === 'categories' && (
+        <div className="space-y-4 animate-in fade-in duration-300">
+          <div className="flex justify-end gap-3 mb-4">
+            <button onClick={() => setShowCatModal(true)} className="bg-white border-2 border-indigo-600 text-indigo-600 px-5 py-2 rounded-xl font-bold hover:bg-indigo-50 transition-all">
+              Nouvelle Famille
+            </button>
+            <button onClick={() => setShowSubCatModal(true)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-indigo-700 shadow-lg transition-all">
+              Nouvelle Sous-Famille
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {categories.map((cat) => (
+              <div key={cat.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                <div className="flex justify-between items-center mb-4">
+                  <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600"><Layers size={20}/></div>
+                  <button className="text-gray-300 hover:text-red-500"><Trash2 size={16}/></button>
+                </div>
+                <h4 className="text-lg font-black text-gray-800 mb-3">{cat.name}</h4>
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Sous-familles :</p>
+                  {/* ON UTILISE BIEN sub_categories ICI */}
+                  {cat.sub_categories && cat.sub_categories.length > 0 ? (
+                    cat.sub_categories.map((sub: any) => (
+                      <div key={sub.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-xs font-bold text-gray-600 group">
+                        <span className="flex items-center gap-2">
+                          <ChevronRight size={14} className="text-indigo-400" /> {sub.name}
+                        </span>
+                        <button className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"><X size={14}/></button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs italic text-gray-400">Aucune sous-famille créée</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* --- MODALS --- */}
+      {/* Modal Famille */}
+      {showCatModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-2xl font-black mb-6">Nouvelle Famille</h3>
+            <form onSubmit={handleAddCategory} className="space-y-4">
+              <input type="text" placeholder="Ex: Marketing, Logistique..." required className="w-full border-2 rounded-xl p-3 outline-none focus:border-indigo-500 font-bold" 
+                onChange={(e) => setNewCat({ name: e.target.value })} />
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowCatModal(false)} className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl">Annuler</button>
+                <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg">Créer</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Sous-Famille */}
+      {showSubCatModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-2xl font-black mb-6">Nouvelle Sous-Famille</h3>
+            <form onSubmit={handleAddSubCategory} className="space-y-4">
+              <select required className="w-full border-2 rounded-xl p-3 font-bold bg-white outline-none focus:border-indigo-500" 
+                onChange={(e) => setNewSubCat({...newSubCat, category_id: e.target.value})}>
+                <option value="">Sélectionner la famille parente</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <input type="text" placeholder="Ex: Publicité Facebook, Essence..." required className="w-full border-2 rounded-xl p-3 outline-none focus:border-indigo-500 font-bold" 
+                onChange={(e) => setNewSubCat({ ...newSubCat, name: e.target.value })} />
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowSubCatModal(false)} className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl">Annuler</button>
+                <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg">Créer</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Utilisateur (Admin Suprême uniquement) */}
+      {showUserModal && isAdminSupréme && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-2xl font-black mb-6">Ajouter un collaborateur</h3>
+            <form onSubmit={handleAddUser} className="space-y-4">
+              <input type="email" placeholder="Email" required className="w-full border-2 rounded-xl p-3 outline-none focus:border-indigo-500 font-bold" 
+                onChange={(e) => setNewUser({...newUser, email: e.target.value})} />
+              <input type="password" placeholder="Mot de passe provisoire" required className="w-full border-2 rounded-xl p-3 outline-none focus:border-indigo-500 font-bold"
+                onChange={(e) => setNewUser({...newUser, password: e.target.value})} />
+              <select className="w-full border-2 rounded-xl p-3 font-bold bg-white outline-none focus:border-indigo-500" 
+                onChange={(e) => setNewUser({...newUser, role: e.target.value})}>
+                <option value="requester">Collaborateur (Requester)</option>
+                <option value="admin">Administrateur (Admin)</option>
+                <option value="admin_level_1">Manager (Admin Level 1)</option>
+              </select>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowUserModal(false)} className="flex-1 py-3 font-bold text-gray-500">Annuler</button>
+                <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg">Valider</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

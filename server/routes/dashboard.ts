@@ -3,199 +3,121 @@ import { supabase } from '../supabase.js';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 
 const router = express.Router();
-
 router.use(authenticateToken);
 
-// Get dashboard stats
+const getMonthBounds = (monthStr: string) => {
+  const [year, month] = monthStr.split('-').map(Number);
+  const start = new Date(year, month - 1, 1).toISOString().slice(0, 10);
+  const end = new Date(year, month, 1).toISOString().slice(0, 10);
+  return { start, end };
+};
+
+// --- GET / (Cartes et Donut) ---
 router.get('/', async (req: AuthRequest, res) => {
-  const { role, id } = req.user!;
-  const { month } = req.query; // Optional month filter 'YYYY-MM'
-  
-  const monthFilter = month ? `${month}-01` : null;
-  const monthEnd = month ? `${month}-31` : null;
+  const { role, id: userId } = req.user!;
+  const { month } = req.query; 
 
   try {
-    // 1. Expenses by category
-    let expQuery = supabase
-      .from('expenses')
-      .select('amount, category:categories(name)')
-      .eq('status', 'approved');
+    let monthStart: string | null = null;
+    let monthNext: string | null = null;
+    if (month && typeof month === 'string') {
+      const bounds = getMonthBounds(month);
+      monthStart = bounds.start;
+      monthNext = bounds.end;
+    }
 
+    // MASSE SALARIALE : AUTORISÉ POUR ADMIN ET ADMIN_LEVEL_1
+    let totalPayrollValue = 0;
+    if (role === 'admin' || role === 'admin_level_1') {
+      const { data: employees } = await supabase.from('employees').select('salary, start_date');
+      const now = new Date();
+      
+      employees?.forEach(emp => {
+        const start = new Date(emp.start_date);
+        if (monthStart && monthNext) {
+          // Si on filtre par mois : on prend le salaire mensuel si l'employé était déjà là
+          if (start < new Date(monthNext)) totalPayrollValue += Number(emp.salary);
+        } else {
+          // Si cumul global : somme historique (mois de présence x salaire)
+          const diff = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth()) + 1;
+          if (diff > 0) totalPayrollValue += Number(emp.salary) * diff;
+        }
+      });
+    }
+
+    // DÉPENSES : Filtrées seulement pour les simples collaborateurs
+    let expQuery = supabase.from('expenses').select('amount, category:categories(name)').eq('status', 'approved');
     if (role !== 'admin' && role !== 'admin_level_1') {
-      expQuery = expQuery.eq('user_id', id);
+      expQuery = expQuery.eq('user_id', userId);
     }
-    if (month) {
-      expQuery = expQuery.gte('date', monthFilter).lte('date', monthEnd);
-    }
+    if (monthStart && monthNext) expQuery = expQuery.gte('date', monthStart).lt('date', monthNext);
 
     const { data: expensesData } = await expQuery;
-    
     const expensesByCategoryMap: Record<string, number> = {};
     expensesData?.forEach((e: any) => {
-      const name = e.category?.name || 'Unknown';
+      const name = e.category?.name || 'Inconnu';
       expensesByCategoryMap[name] = (expensesByCategoryMap[name] || 0) + Number(e.amount);
     });
 
-    const expensesByCategory = Object.entries(expensesByCategoryMap).map(([name, total]) => ({ name, total }));
-    const totalExpenses = expensesByCategory.reduce((sum, e) => sum + e.total, 0);
-
-    // 2. Recent expenses
-    let recentQuery = supabase
-      .from('expenses')
-      .select(`
-        *,
-        category:categories(name),
-        sub_category:sub_categories(name),
-        user:users!expenses_user_id_fkey(email)
-      `);
-
-    if (role !== 'admin' && role !== 'admin_level_1') {
-      recentQuery = recentQuery.eq('user_id', id);
-    }
-    if (month) {
-      recentQuery = recentQuery.gte('date', monthFilter).lte('date', monthEnd);
-    }
-
-    const { data: recentExpensesRaw } = await recentQuery.order('created_at', { ascending: false }).limit(10);
-    const recentExpenses = recentExpensesRaw?.map(e => ({
-      ...e,
-      category_name: e.category?.name,
-      sub_category_name: e.sub_category?.name,
-      user_email: e.user?.email
-    })) || [];
-
-    // 3. Stats counts
-    let statsQuery = supabase
-      .from('expenses')
-      .select('status');
-
-    if (role !== 'admin' && role !== 'admin_level_1') {
-      statsQuery = statsQuery.eq('user_id', id);
-    }
-    if (month) {
-      statsQuery = statsQuery.gte('date', monthFilter).lte('date', monthEnd);
-    }
-
-    const { data: statsRaw } = await statsQuery;
-    const stats = {
-      pending: statsRaw?.filter(s => s.status === 'pending').length || 0,
-      rejected: statsRaw?.filter(s => s.status === 'rejected').length || 0,
-      approved: statsRaw?.filter(s => s.status === 'approved').length || 0
-    };
-
-    // 4. Payroll
-    let totalPayrollValue = 0;
-    if (month) {
-      const { data: payrollData } = await supabase
-        .from('employees')
-        .select('salary')
-        .lte('start_date', monthEnd);
-      totalPayrollValue = payrollData?.reduce((sum, e) => sum + Number(e.salary), 0) || 0;
-    } else {
-      const { data: firstHire } = await supabase
-        .from('employees')
-        .select('start_date')
-        .order('start_date', { ascending: true })
-        .limit(1)
-        .single();
-
-      if (firstHire) {
-        const startDate = new Date(firstHire.start_date);
-        const endDate = new Date();
-        let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-        while (current <= endDate) {
-          const monthStr = current.toISOString().slice(0, 7);
-          const { data: monthlyData } = await supabase
-            .from('employees')
-            .select('salary')
-            .lte('start_date', `${monthStr}-31`);
-          totalPayrollValue += monthlyData?.reduce((sum, e) => sum + Number(e.salary), 0) || 0;
-          current.setMonth(current.getMonth() + 1);
-        }
-      }
-    }
-
     res.json({
-      expensesByCategory,
-      totalExpenses,
-      recentExpenses,
+      expensesByCategory: Object.entries(expensesByCategoryMap).map(([name, total]) => ({ name, total })),
+      totalExpenses: Object.values(expensesByCategoryMap).reduce((a, b) => a + b, 0),
       totalPayroll: totalPayrollValue,
-      stats
     });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+  } catch (err: any) { 
+    res.status(500).json({ error: err.message }); 
   }
 });
 
-// Get comparison data between months
+// --- GET /comparison (LOGIQUE IDENTIQUE ADMIN & MANAGER) ---
 router.get('/comparison', async (req: AuthRequest, res) => {
-  const { role, id } = req.user!;
+  const { role, id: userId } = req.user!;
   const { months, type, categories: categoryIds } = req.query;
-  
-  if (!months) return res.status(400).json({ error: 'Months required' });
-  
+  if (!months) return res.status(400).json({ error: 'Mois requis' });
+
+  // Sécurité : Seul Admin et Manager peuvent voir la Payroll
+  if (type === 'payroll' && role !== 'admin' && role !== 'admin_level_1') {
+    return res.status(403).json({ error: 'Accès refusé' });
+  }
+
   const monthList = (months as string).split(',');
   const results: any = {};
 
   try {
-    for (const month of monthList) {
-      const monthStart = `${month}-01`;
-      const monthEnd = `${month}-31`;
+    const { data: employees } = await supabase.from('employees').select('salary, start_date');
 
-      let query: any;
-      if (type === 'total') {
-        query = supabase
-          .from('expenses')
-          .select('amount')
-          .eq('status', 'approved')
-          .gte('date', monthStart)
-          .lte('date', monthEnd);
-      } else if (type === 'subcategory') {
-        query = supabase
-          .from('expenses')
-          .select('amount, sub_category:sub_categories(name)')
-          .eq('status', 'approved')
-          .gte('date', monthStart)
-          .lte('date', monthEnd)
-          .not('sub_category_id', 'is', null);
-      } else {
-        query = supabase
-          .from('expenses')
-          .select('amount, category:categories(name)')
-          .eq('status', 'approved')
-          .gte('date', monthStart)
-          .lte('date', monthEnd);
-      }
+    for (const m of monthList) {
+      const { start, end } = getMonthBounds(m);
+      const targetDate = new Date(end);
 
-      if (categoryIds && (type === 'category' || type === 'subcategory')) {
-        const ids = (categoryIds as string).split(',').map(Number);
-        query = query.in('category_id', ids);
-      }
+      // Payroll autorisée pour Admin et Level 1
+      const monthlyPayroll = (role === 'admin' || role === 'admin_level_1')
+        ? (employees?.filter(emp => new Date(emp.start_date) < targetDate).reduce((sum, emp) => sum + Number(emp.salary), 0) || 0)
+        : 0;
 
-      if (role !== 'admin' && role !== 'admin_level_1') {
-        query = query.eq('user_id', id);
-      }
+      let query = supabase.from('expenses').select('amount, category:categories(name, id)').eq('status', 'approved').gte('date', start).lt('date', end);
+      if (role !== 'admin' && role !== 'admin_level_1') query = query.eq('user_id', userId);
+      if (categoryIds && type === 'category') query = query.in('category_id', (categoryIds as string).split(',').map(Number));
 
-      const { data, error } = await query;
-      if (error) throw error;
+      const { data: expenses } = await query;
+      const totalExpenses = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
 
       if (type === 'total') {
-        const total = data.reduce((sum, e) => sum + Number(e.amount), 0);
-        results[month] = [{ label: 'Total', total }];
+        results[m] = [{ label: 'Total Réel', total: totalExpenses + monthlyPayroll }];
+      } else if (type === 'payroll') {
+        results[m] = [{ label: 'Masse Salariale', total: monthlyPayroll }];
       } else {
         const grouped: Record<string, number> = {};
-        data.forEach((e: any) => {
-          const label = type === 'subcategory' ? e.sub_category?.name : e.category?.name;
-          if (label) {
-            grouped[label] = (grouped[label] || 0) + Number(e.amount);
-          }
+        expenses?.forEach((e: any) => {
+          const name = e.category?.name || 'Inconnu';
+          grouped[name] = (grouped[name] || 0) + Number(e.amount);
         });
-        results[month] = Object.entries(grouped).map(([label, total]) => ({ label, total }));
+        results[m] = Object.entries(grouped).map(([label, total]) => ({ label, total }));
       }
     }
     res.json(results);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+  } catch (err: any) { 
+    res.status(500).json({ error: err.message }); 
   }
 });
 
