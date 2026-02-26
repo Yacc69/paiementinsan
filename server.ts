@@ -1,5 +1,4 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 
 // Importation des routes
@@ -11,7 +10,6 @@ import dashboardRoutes from './server/routes/dashboard.js';
 
 const app = express();
 
-// Configuration Body-parser
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -23,31 +21,22 @@ app.use('/api/categories', categoriesRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
 // --- Logique de démarrage ---
-async function start() {
-  // SI ON EST EN LOCAL : On lance Vite et le serveur .listen()
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
+if (process.env.NODE_ENV !== 'production') {
+  // ON DYNAMISE L'IMPORT DE VITE : C'est le secret pour éviter ton erreur !
+  import('vite').then(async (viteModule) => {
+    const vite = await viteModule.createServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
-    
     app.use(vite.middlewares);
     
-    const PORT = 3000;
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Mode LOCAL : http://localhost:${PORT}`);
+    app.listen(3000, () => {
+      console.log(`🚀 Mode LOCAL : http://localhost:3000`);
     });
-  } else {
-    // SI ON EST EN PRODUCTION (Vercel ou autre)
-    // On sert les fichiers statiques du dossier dist
-    app.use(express.static('dist'));
-  }
+  });
+} else {
+  // En production sur Vercel, on sert juste le dossier dist
+  app.use(express.static('dist'));
 }
 
-// On n'exécute la fonction start() qu'en local
-if (process.env.NODE_ENV !== 'production') {
-  start();
-}
-
-// INDISPENSABLE POUR VERCEL
 export default app;
