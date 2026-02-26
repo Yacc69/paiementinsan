@@ -1,5 +1,5 @@
 import express from 'express';
-import db from '../db.js';
+import { supabase } from '../supabase.js';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -7,170 +7,196 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // Get dashboard stats
-router.get('/', (req: AuthRequest, res) => {
+router.get('/', async (req: AuthRequest, res) => {
   const { role, id } = req.user!;
   const { month } = req.query; // Optional month filter 'YYYY-MM'
   
-  let expensesByCategory;
-  let totalExpenses;
-  let recentExpenses;
-  let pendingCount;
-  let rejectedCount;
-  let approvedCount;
+  const monthFilter = month ? `${month}-01` : null;
+  const monthEnd = month ? `${month}-31` : null;
 
-  const monthFilter = month ? `AND e.date LIKE '${month}%'` : '';
+  try {
+    // 1. Expenses by category
+    let expQuery = supabase
+      .from('expenses')
+      .select('amount, category:categories(name)')
+      .eq('status', 'approved');
 
-  if (role === 'admin' || role === 'admin_level_1') {
-    expensesByCategory = db.prepare(`
-      SELECT c.name, SUM(e.amount) as total
-      FROM expenses e
-      JOIN categories c ON e.category_id = c.id
-      WHERE e.status = 'approved' ${monthFilter}
-      GROUP BY c.id
-    `).all();
+    if (role !== 'admin' && role !== 'admin_level_1') {
+      expQuery = expQuery.eq('user_id', id);
+    }
+    if (month) {
+      expQuery = expQuery.gte('date', monthFilter).lte('date', monthEnd);
+    }
 
-    totalExpenses = db.prepare(`SELECT SUM(amount) as total FROM expenses e WHERE status = 'approved' ${monthFilter}`).get() as { total: number };
+    const { data: expensesData } = await expQuery;
     
-    recentExpenses = db.prepare(`
-      SELECT e.*, c.name as category_name, sc.name as sub_category_name, u.email as user_email
-      FROM expenses e
-      JOIN categories c ON e.category_id = c.id
-      LEFT JOIN sub_categories sc ON e.sub_category_id = sc.id
-      JOIN users u ON e.user_id = u.id
-      WHERE 1=1 ${monthFilter}
-      ORDER BY e.created_at DESC
-      LIMIT 10
-    `).all();
+    const expensesByCategoryMap: Record<string, number> = {};
+    expensesData?.forEach((e: any) => {
+      const name = e.category?.name || 'Unknown';
+      expensesByCategoryMap[name] = (expensesByCategoryMap[name] || 0) + Number(e.amount);
+    });
 
-    pendingCount = db.prepare(`SELECT COUNT(*) as count FROM expenses e WHERE status = 'pending' ${monthFilter}`).get() as { count: number };
-    rejectedCount = db.prepare(`SELECT COUNT(*) as count FROM expenses e WHERE status = 'rejected' ${monthFilter}`).get() as { count: number };
-    approvedCount = db.prepare(`SELECT COUNT(*) as count FROM expenses e WHERE status = 'approved' ${monthFilter}`).get() as { count: number };
-  } else {
-    expensesByCategory = db.prepare(`
-      SELECT c.name, SUM(e.amount) as total
-      FROM expenses e
-      JOIN categories c ON e.category_id = c.id
-      WHERE e.user_id = ? AND e.status = 'approved' ${monthFilter}
-      GROUP BY c.id
-    `).all(id);
+    const expensesByCategory = Object.entries(expensesByCategoryMap).map(([name, total]) => ({ name, total }));
+    const totalExpenses = expensesByCategory.reduce((sum, e) => sum + e.total, 0);
 
-    totalExpenses = db.prepare(`SELECT SUM(amount) as total FROM expenses e WHERE user_id = ? AND status = 'approved' ${monthFilter}`).get(id) as { total: number };
-    
-    recentExpenses = db.prepare(`
-      SELECT e.*, c.name as category_name, sc.name as sub_category_name
-      FROM expenses e
-      JOIN categories c ON e.category_id = c.id
-      LEFT JOIN sub_categories sc ON e.sub_category_id = sc.id
-      WHERE e.user_id = ? ${monthFilter}
-      ORDER BY e.created_at DESC
-      LIMIT 10
-    `).all(id);
+    // 2. Recent expenses
+    let recentQuery = supabase
+      .from('expenses')
+      .select(`
+        *,
+        category:categories(name),
+        sub_category:sub_categories(name),
+        user:users!expenses_user_id_fkey(email)
+      `);
 
-    pendingCount = db.prepare(`SELECT COUNT(*) as count FROM expenses e WHERE user_id = ? AND status = 'pending' ${monthFilter}`).get(id) as { count: number };
-    rejectedCount = db.prepare(`SELECT COUNT(*) as count FROM expenses e WHERE user_id = ? AND status = 'rejected' ${monthFilter}`).get(id) as { count: number };
-    approvedCount = db.prepare(`SELECT COUNT(*) as count FROM expenses e WHERE user_id = ? AND status = 'approved' ${monthFilter}`).get(id) as { count: number };
-  }
+    if (role !== 'admin' && role !== 'admin_level_1') {
+      recentQuery = recentQuery.eq('user_id', id);
+    }
+    if (month) {
+      recentQuery = recentQuery.gte('date', monthFilter).lte('date', monthEnd);
+    }
 
-  let totalPayrollValue = 0;
-  if (month) {
-    const tp = db.prepare(`
-      SELECT SUM(salary) as total_payroll 
-      FROM employees 
-      WHERE strftime('%Y-%m', start_date) <= ?
-    `).get(month) as { total_payroll: number };
-    totalPayrollValue = tp.total_payroll || 0;
-  } else {
-    const firstHire = db.prepare("SELECT MIN(start_date) as first FROM employees").get() as { first: string };
-    if (firstHire.first) {
-      const startDate = new Date(firstHire.first);
-      const endDate = new Date();
-      let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-      while (current <= endDate) {
-        const monthStr = current.toISOString().slice(0, 7);
-        const monthlyTotal = db.prepare(`
-          SELECT SUM(salary) as total 
-          FROM employees 
-          WHERE strftime('%Y-%m', start_date) <= ?
-        `).get(monthStr) as { total: number };
-        totalPayrollValue += (monthlyTotal.total || 0);
-        current.setMonth(current.getMonth() + 1);
+    const { data: recentExpensesRaw } = await recentQuery.order('created_at', { ascending: false }).limit(10);
+    const recentExpenses = recentExpensesRaw?.map(e => ({
+      ...e,
+      category_name: e.category?.name,
+      sub_category_name: e.sub_category?.name,
+      user_email: e.user?.email
+    })) || [];
+
+    // 3. Stats counts
+    let statsQuery = supabase
+      .from('expenses')
+      .select('status');
+
+    if (role !== 'admin' && role !== 'admin_level_1') {
+      statsQuery = statsQuery.eq('user_id', id);
+    }
+    if (month) {
+      statsQuery = statsQuery.gte('date', monthFilter).lte('date', monthEnd);
+    }
+
+    const { data: statsRaw } = await statsQuery;
+    const stats = {
+      pending: statsRaw?.filter(s => s.status === 'pending').length || 0,
+      rejected: statsRaw?.filter(s => s.status === 'rejected').length || 0,
+      approved: statsRaw?.filter(s => s.status === 'approved').length || 0
+    };
+
+    // 4. Payroll
+    let totalPayrollValue = 0;
+    if (month) {
+      const { data: payrollData } = await supabase
+        .from('employees')
+        .select('salary')
+        .lte('start_date', monthEnd);
+      totalPayrollValue = payrollData?.reduce((sum, e) => sum + Number(e.salary), 0) || 0;
+    } else {
+      const { data: firstHire } = await supabase
+        .from('employees')
+        .select('start_date')
+        .order('start_date', { ascending: true })
+        .limit(1)
+        .single();
+
+      if (firstHire) {
+        const startDate = new Date(firstHire.start_date);
+        const endDate = new Date();
+        let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+        while (current <= endDate) {
+          const monthStr = current.toISOString().slice(0, 7);
+          const { data: monthlyData } = await supabase
+            .from('employees')
+            .select('salary')
+            .lte('start_date', `${monthStr}-31`);
+          totalPayrollValue += monthlyData?.reduce((sum, e) => sum + Number(e.salary), 0) || 0;
+          current.setMonth(current.getMonth() + 1);
+        }
       }
     }
-  }
 
-  res.json({
-    expensesByCategory,
-    totalExpenses: totalExpenses.total || 0,
-    recentExpenses,
-    totalPayroll: totalPayrollValue,
-    stats: {
-      pending: pendingCount.count,
-      rejected: rejectedCount.count,
-      approved: approvedCount.count
-    }
-  });
+    res.json({
+      expensesByCategory,
+      totalExpenses,
+      recentExpenses,
+      totalPayroll: totalPayrollValue,
+      stats
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// Get comparison data between months (including sub-categories and total)
-router.get('/comparison', (req: AuthRequest, res) => {
+// Get comparison data between months
+router.get('/comparison', async (req: AuthRequest, res) => {
   const { role, id } = req.user!;
-  const { months, type, categories: categoryIds } = req.query; // type can be 'category', 'subcategory', or 'total'
+  const { months, type, categories: categoryIds } = req.query;
   
   if (!months) return res.status(400).json({ error: 'Months required' });
   
   const monthList = (months as string).split(',');
   const results: any = {};
 
-  for (const month of monthList) {
-    let query = '';
-    let params: any[] = [month];
+  try {
+    for (const month of monthList) {
+      const monthStart = `${month}-01`;
+      const monthEnd = `${month}-31`;
 
-    if (type === 'total') {
-      query = `
-        SELECT 'Total' as label, SUM(e.amount) as total
-        FROM expenses e
-        WHERE e.date LIKE ? || '%' AND e.status = 'approved'
-      `;
-    } else if (type === 'subcategory') {
-      query = `
-        SELECT sc.name as label, SUM(e.amount) as total
-        FROM expenses e
-        JOIN sub_categories sc ON e.sub_category_id = sc.id
-        WHERE e.date LIKE ? || '%' AND e.status = 'approved'
-      `;
-    } else {
-      query = `
-        SELECT c.name as label, SUM(e.amount) as total
-        FROM expenses e
-        JOIN categories c ON e.category_id = c.id
-        WHERE e.date LIKE ? || '%' AND e.status = 'approved'
-      `;
+      let query: any;
+      if (type === 'total') {
+        query = supabase
+          .from('expenses')
+          .select('amount')
+          .eq('status', 'approved')
+          .gte('date', monthStart)
+          .lte('date', monthEnd);
+      } else if (type === 'subcategory') {
+        query = supabase
+          .from('expenses')
+          .select('amount, sub_category:sub_categories(name)')
+          .eq('status', 'approved')
+          .gte('date', monthStart)
+          .lte('date', monthEnd)
+          .not('sub_category_id', 'is', null);
+      } else {
+        query = supabase
+          .from('expenses')
+          .select('amount, category:categories(name)')
+          .eq('status', 'approved')
+          .gte('date', monthStart)
+          .lte('date', monthEnd);
+      }
+
+      if (categoryIds && (type === 'category' || type === 'subcategory')) {
+        const ids = (categoryIds as string).split(',').map(Number);
+        query = query.in('category_id', ids);
+      }
+
+      if (role !== 'admin' && role !== 'admin_level_1') {
+        query = query.eq('user_id', id);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      if (type === 'total') {
+        const total = data.reduce((sum, e) => sum + Number(e.amount), 0);
+        results[month] = [{ label: 'Total', total }];
+      } else {
+        const grouped: Record<string, number> = {};
+        data.forEach((e: any) => {
+          const label = type === 'subcategory' ? e.sub_category?.name : e.category?.name;
+          if (label) {
+            grouped[label] = (grouped[label] || 0) + Number(e.amount);
+          }
+        });
+        results[month] = Object.entries(grouped).map(([label, total]) => ({ label, total }));
+      }
     }
-    
-    // Add category filter if provided
-    if (categoryIds && (type === 'category' || type === 'subcategory')) {
-      const ids = (categoryIds as string).split(',');
-      const placeholders = ids.map(() => '?').join(',');
-      query += ` AND e.category_id IN (${placeholders})`;
-      params.push(...ids);
-    }
-    
-    if (role !== 'admin' && role !== 'admin_level_1') {
-      query += ` AND e.user_id = ?`;
-      params.push(id);
-    }
-    
-    if (type === 'subcategory') {
-      query += ` GROUP BY sc.id`;
-    } else if (type === 'category') {
-      query += ` GROUP BY c.id`;
-    }
-    
-    const data = db.prepare(query).all(...params);
-    results[month] = data;
+    res.json(results);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
-
-  res.json(results);
 });
 
 export default router;

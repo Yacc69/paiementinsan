@@ -1,6 +1,5 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
-import db from './server/db.js';
 import authRoutes from './server/routes/auth.js';
 import expensesRoutes from './server/routes/expenses.js';
 import employeesRoutes from './server/routes/employees.js';

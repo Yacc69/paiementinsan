@@ -1,5 +1,5 @@
 import express from 'express';
-import db from '../db.js';
+import { supabase } from '../supabase.js';
 import { authenticateToken, AuthRequest, requireSuperAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -7,81 +7,92 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // Get all employees (Super Admin only)
-router.get('/', requireSuperAdmin, (req: AuthRequest, res) => {
+router.get('/', requireSuperAdmin, async (req: AuthRequest, res) => {
   const { month, search } = req.query;
-  let query = `
-    SELECT e.*, u.email as added_by_email
-    FROM employees e
-    LEFT JOIN users u ON e.added_by = u.id
-    WHERE 1=1
-  `;
-  const params: any[] = [];
+  
+  let query = supabase
+    .from('employees')
+    .select(`
+      *,
+      added_by_user:users!employees_added_by_fkey(email)
+    `);
 
   if (month) {
-    query += ` AND strftime('%Y-%m', e.start_date) <= ?`;
-    params.push(month);
+    query = query.lte('start_date', `${month}-31`);
   }
 
   if (search) {
-    query += ` AND (e.first_name LIKE ? OR e.last_name LIKE ?)`;
-    params.push(`%${search}%`, `%${search}%`);
+    query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%`);
   }
 
-  query += ` ORDER BY e.start_date DESC`;
-  
-  const employees = db.prepare(query).all(...params);
-  res.json(employees);
+  const { data: employees, error } = await query.order('start_date', { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  // Format response to match expected frontend structure
+  const formattedEmployees = employees.map(e => ({
+    ...e,
+    added_by_email: e.added_by_user?.email
+  }));
+
+  res.json(formattedEmployees);
 });
 
 // Add employee (Super Admin only)
-router.post('/', requireSuperAdmin, (req: AuthRequest, res) => {
+router.post('/', requireSuperAdmin, async (req: AuthRequest, res) => {
   const { first_name, last_name, salary, start_date } = req.body;
   const added_by = req.user!.id;
 
-  try {
-    const result = db.prepare(`
-      INSERT INTO employees (first_name, last_name, salary, start_date, added_by)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(first_name, last_name, salary, start_date, added_by);
-    
-    res.status(201).json({ id: result.lastInsertRowid });
-  } catch (error) {
-    res.status(400).json({ error: 'Invalid data' });
-  }
+  const { data, error } = await supabase
+    .from('employees')
+    .insert([{ first_name, last_name, salary, start_date, added_by }])
+    .select()
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+  res.status(201).json(data);
 });
 
 // Get total monthly payroll (Super Admin only)
-router.get('/payroll', requireSuperAdmin, (req: AuthRequest, res) => {
+router.get('/payroll', requireSuperAdmin, async (req: AuthRequest, res) => {
   const { month } = req.query;
   
   if (month) {
-    // Single month cumulative payroll (sum of salaries of all employees hired by then)
-    const total = db.prepare(`
-      SELECT SUM(salary) as total_payroll 
-      FROM employees 
-      WHERE strftime('%Y-%m', start_date) <= ?
-    `).get(month) as { total_payroll: number };
-    
-    return res.json({ total_payroll: total.total_payroll || 0 });
-  } else {
-    // "All months" cumulative sum: sum of (monthly payroll) for every month from first hire to now
-    const firstHire = db.prepare("SELECT MIN(start_date) as first FROM employees").get() as { first: string };
-    if (!firstHire.first) return res.json({ total_payroll: 0 });
+    // Single month cumulative payroll
+    const { data, error } = await supabase
+      .from('employees')
+      .select('salary')
+      .lte('start_date', `${month}-31`);
 
-    const startDate = new Date(firstHire.first);
+    if (error) return res.status(500).json({ error: error.message });
+    
+    const total = data.reduce((sum, e) => sum + Number(e.salary), 0);
+    return res.json({ total_payroll: total });
+  } else {
+    // "All months" cumulative sum
+    const { data: firstHire, error: hireError } = await supabase
+      .from('employees')
+      .select('start_date')
+      .order('start_date', { ascending: true })
+      .limit(1)
+      .single();
+
+    if (hireError || !firstHire) return res.json({ total_payroll: 0 });
+
+    const startDate = new Date(firstHire.start_date);
     const endDate = new Date();
     let totalCumulative = 0;
 
     let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
     while (current <= endDate) {
       const monthStr = current.toISOString().slice(0, 7);
-      const monthlyTotal = db.prepare(`
-        SELECT SUM(salary) as total 
-        FROM employees 
-        WHERE strftime('%Y-%m', start_date) <= ?
-      `).get(monthStr) as { total: number };
+      const { data: monthlyData } = await supabase
+        .from('employees')
+        .select('salary')
+        .lte('start_date', `${monthStr}-31`);
       
-      totalCumulative += (monthlyTotal.total || 0);
+      const monthlyTotal = monthlyData?.reduce((sum, e) => sum + Number(e.salary), 0) || 0;
+      totalCumulative += monthlyTotal;
       current.setMonth(current.getMonth() + 1);
     }
 
