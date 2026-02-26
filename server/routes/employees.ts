@@ -4,9 +4,12 @@ import { authenticateToken, AuthRequest, requireSuperAdmin } from '../middleware
 
 const router = express.Router();
 
+// Applique l'authentification à toutes les routes de ce fichier
 router.use(authenticateToken);
 
-// Get all employees (Super Admin only)
+/**
+ * GET / - Liste des salariés avec filtres
+ */
 router.get('/', requireSuperAdmin, async (req: AuthRequest, res) => {
   const { month, search } = req.query;
   
@@ -14,87 +17,107 @@ router.get('/', requireSuperAdmin, async (req: AuthRequest, res) => {
     .from('employees')
     .select(`
       *,
-      added_by_user:users!employees_added_by_fkey(email)
+      added_by_user:users(email)
     `);
 
-  if (month) {
-    query = query.lte('start_date', `${month}-31`);
+  // Filtre par mois (tous les employés dont la date de début est <= au mois sélectionné)
+  if (month && typeof month === 'string') {
+    const [year, m] = month.split('-').map(Number);
+    // On prend le 1er jour du mois SUIVANT pour utiliser l'opérateur "inférieur à" (lt)
+    // C'est la méthode la plus sûre pour gérer 28, 29, 30 ou 31 jours.
+    const nextMonthLimit = new Date(year, m, 1).toISOString().slice(0, 10);
+    query = query.lt('start_date', nextMonthLimit);
   }
 
-  if (search) {
+  // Filtre de recherche par nom/prénom
+  if (search && typeof search === 'string') {
     query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%`);
   }
 
   const { data: employees, error } = await query.order('start_date', { ascending: false });
 
   if (error) return res.status(500).json({ error: error.message });
-
-  // Format response to match expected frontend structure
+  
   const formattedEmployees = employees.map(e => ({
     ...e,
-    added_by_email: e.added_by_user?.email
+    added_by_email: (e as any).added_by_user?.email
   }));
 
   res.json(formattedEmployees);
 });
 
-// Add employee (Super Admin only)
+/**
+ * POST / - Ajouter un salarié
+ */
 router.post('/', requireSuperAdmin, async (req: AuthRequest, res) => {
   const { first_name, last_name, salary, start_date } = req.body;
-  const added_by = req.user!.id;
+  const added_by = req.user!.id; // UUID de l'admin connecté
 
   const { data, error } = await supabase
     .from('employees')
-    .insert([{ first_name, last_name, salary, start_date, added_by }])
+    .insert([{ 
+      first_name, 
+      last_name, 
+      salary: Number(salary), // S'assurer que c'est un nombre
+      start_date, 
+      added_by 
+    }])
     .select()
     .single();
 
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) {
+    console.error("Erreur insertion salarié:", error);
+    return res.status(400).json({ error: error.message });
+  }
   res.status(201).json(data);
 });
 
-// Get total monthly payroll (Super Admin only)
+/**
+ * GET /payroll - Calcul de la masse salariale (Mensuelle ou Cumulative)
+ */
 router.get('/payroll', requireSuperAdmin, async (req: AuthRequest, res) => {
   const { month } = req.query;
   
-  if (month) {
-    // Single month cumulative payroll
+  if (month && typeof month === 'string') {
+    // --- 1. Calcul pour un mois spécifique ---
+    const [year, m] = month.split('-').map(Number);
+    const nextMonthLimit = new Date(year, m, 1).toISOString().slice(0, 10);
+
     const { data, error } = await supabase
       .from('employees')
       .select('salary')
-      .lte('start_date', `${month}-31`);
+      .lt('start_date', nextMonthLimit);
 
     if (error) return res.status(500).json({ error: error.message });
     
-    const total = data.reduce((sum, e) => sum + Number(e.salary), 0);
+    const total = data?.reduce((sum, e) => sum + Number(e.salary), 0) || 0;
     return res.json({ total_payroll: total });
+
   } else {
-    // "All months" cumulative sum
-    const { data: firstHire, error: hireError } = await supabase
+    // --- 2. Calcul CUMULATIF (Optimisé : 1 seule requête SQL) ---
+    // Au lieu de boucler mois par mois, on récupère tout et on calcule le prorata en JS
+    const { data: employees, error } = await supabase
       .from('employees')
-      .select('start_date')
-      .order('start_date', { ascending: true })
-      .limit(1)
-      .single();
+      .select('salary, start_date')
+      .order('start_date', { ascending: true });
 
-    if (hireError || !firstHire) return res.json({ total_payroll: 0 });
+    if (error) return res.status(500).json({ error: error.message });
+    if (!employees || employees.length === 0) return res.json({ total_payroll: 0 });
 
-    const startDate = new Date(firstHire.start_date);
-    const endDate = new Date();
+    const now = new Date();
     let totalCumulative = 0;
 
-    let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-    while (current <= endDate) {
-      const monthStr = current.toISOString().slice(0, 7);
-      const { data: monthlyData } = await supabase
-        .from('employees')
-        .select('salary')
-        .lte('start_date', `${monthStr}-31`);
-      
-      const monthlyTotal = monthlyData?.reduce((sum, e) => sum + Number(e.salary), 0) || 0;
-      totalCumulative += monthlyTotal;
-      current.setMonth(current.getMonth() + 1);
-    }
+    employees.forEach(emp => {
+      const start = new Date(emp.start_date);
+      // Calcul du nombre de mois payés (du début à aujourd'hui)
+      const diffMonths = (now.getFullYear() - start.getFullYear()) * 12 
+                         + (now.getMonth() - start.getMonth()) 
+                         + 1; // +1 pour inclure le mois en cours
+
+      if (diffMonths > 0) {
+        totalCumulative += Number(emp.salary) * diffMonths;
+      }
+    });
 
     res.json({ total_payroll: totalCumulative });
   }
