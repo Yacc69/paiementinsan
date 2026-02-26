@@ -1,3 +1,3 @@
-// api/index.js (Renomme le fichier en .js)
-const app = require('../server.ts'); 
-module.exports = app;
+// api/index.js
+import app from '../server.ts'; // On pointe bien vers le fichier .ts
+export default app;
