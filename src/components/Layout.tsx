@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { LayoutDashboard, Receipt, Users, LogOut, Settings } from 'lucide-react';
+import { NotificationBell } from './NotificationBell';
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -33,6 +34,8 @@ export default function Layout() {
         <div className="p-6">
           <h1 className="text-xl font-bold text-gray-900">FinManage</h1>
         </div>
+
+        {/* Menu de navigation */}
         <nav className="flex-1 px-4 space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -52,21 +55,40 @@ export default function Layout() {
               </Link>
             );
           })}
-        </nav>
-        <div className="p-4 border-t border-gray-200">
-          <div className="flex items-center">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">{user?.email}</p>
-              <p className="text-xs text-gray-500 truncate capitalize">{user?.role}</p>
+
+          {/* --- NOUVELLE POSITION : JUSTE SOUS LE DERNIER ITEM --- */}
+          <div className="mt-8 pt-6 border-t border-gray-100">
+            <div className="px-3 mb-2">
+              <p className="text-[10px] font-uppercase font-bold text-gray-400 tracking-wider uppercase">
+                Session Utilisateur
+              </p>
             </div>
-            <button
-              onClick={handleLogout}
-              className="ml-2 p-2 text-gray-400 hover:text-gray-500 rounded-full hover:bg-gray-100"
-            >
-              <LogOut className="h-5 w-5" />
-            </button>
+            
+            <div className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg shadow-sm border border-gray-100">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-gray-900 truncate">{user?.email}</p>
+                <p className="text-[10px] text-gray-500 truncate capitalize">{user?.role}</p>
+              </div>
+              
+              <div className="flex items-center gap-1">
+                {/* La cloche de notification */}
+                <NotificationBell />
+                
+                {/* Le bouton déconnexion */}
+                <button
+                  onClick={handleLogout}
+                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                  title="Déconnexion"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
+        </nav>
+
+        {/* Espace vide en bas */}
+        <div className="p-4" />
       </aside>
 
       {/* Main content */}

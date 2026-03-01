@@ -8,8 +8,7 @@ router.use(authenticateToken);
 
 /**
  * GET /
- * Liste des dépenses : Admin et Admin_Level_1 voient tout. 
- * Les collaborateurs voient seulement leurs propres dépenses.
+ * (Inchangé - Ton code original)
  */
 router.get('/', async (req: AuthRequest, res) => {
   const { role, id } = req.user!;
@@ -24,7 +23,6 @@ router.get('/', async (req: AuthRequest, res) => {
       approver:users!expenses_approved_by_fkey(email)
     `);
 
-  // SÉCURITÉ : Si l'utilisateur n'est pas Admin ou Manager, on filtre par son ID
   if (role !== 'admin' && role !== 'admin_level_1') {
     query = query.eq('user_id', id);
   }
@@ -46,11 +44,12 @@ router.get('/', async (req: AuthRequest, res) => {
 
 /**
  * POST /
- * Création d'une demande de frais
+ * Création d'une demande de frais + Notification
  */
 router.post('/', async (req: AuthRequest, res) => {
   const { category_id, sub_category_id, amount, description, date, attachment } = req.body;
   const user_id = req.user!.id;
+  const user_email = req.user!.email;
 
   const { data, error } = await supabase
     .from('expenses')
@@ -67,18 +66,26 @@ router.post('/', async (req: AuthRequest, res) => {
     .single();
 
   if (error) return res.status(400).json({ error: error.message });
+
+  // --- AJOUT NOTIFICATION ---
+  // On notifie l'utilisateur que sa demande est créée
+  await supabase.from('notifications').insert([{
+    user_id: user_id,
+    title: "Demande créée",
+    message: `Votre dépense de ${amount}€ a été soumise.`,
+    type: 'info'
+  }]);
+
   res.status(201).json({ id: data.id, status: 'pending' });
 });
 
 /**
  * PATCH /:id/status
- * Validation ou Rejet des frais.
- * Autorisé pour Admin ET Admin_Level_1
+ * Validation ou Rejet + Notification
  */
 router.patch('/:id/status', async (req: AuthRequest, res) => {
   const { role, id: userId } = req.user!;
   
-  // SÉCURITÉ : Seuls les Admins ou Managers peuvent valider
   if (role !== 'admin' && role !== 'admin_level_1') {
     return res.status(403).json({ error: 'Autorisation insuffisante' });
   }
@@ -90,6 +97,9 @@ router.patch('/:id/status', async (req: AuthRequest, res) => {
     return res.status(400).json({ error: 'Statut invalide' });
   }
 
+  // On récupère les infos de la dépense AVANT l'update pour la notification
+  const { data: expense } = await supabase.from('expenses').select('user_id, amount').eq('id', id).single();
+
   const approved_by = (status === 'approved' || status === 'rejected') ? userId : null;
 
   const { error } = await supabase
@@ -98,12 +108,24 @@ router.patch('/:id/status', async (req: AuthRequest, res) => {
     .eq('id', id);
 
   if (error) return res.status(500).json({ error: error.message });
+
+  // --- AJOUT NOTIFICATION ---
+  if (expense) {
+    const msg = status === 'approved' ? 'acceptée' : 'refusée';
+    await supabase.from('notifications').insert([{
+      user_id: expense.user_id,
+      title: `Dépense ${msg}`,
+      message: `Votre demande de ${expense.amount}€ a été ${msg}.`,
+      type: status === 'approved' ? 'success' : 'error'
+    }]);
+  }
+
   res.json({ success: true });
 });
 
 /**
  * DELETE /:id
- * Suppression par l'Admin, le Manager, ou le propriétaire si la demande est en attente.
+ * (Inchangé - Ton code original)
  */
 router.delete('/:id', async (req: AuthRequest, res) => {
   const { role, id: userId } = req.user!;
@@ -117,7 +139,6 @@ router.delete('/:id', async (req: AuthRequest, res) => {
 
   if (fetchError || !expense) return res.status(404).json({ error: 'Dépense introuvable' });
 
-  // Autorisation : Admin, Manager, ou propriétaire si statut 'pending'
   const isAuthorized = role === 'admin' || 
                        role === 'admin_level_1' || 
                        (expense.user_id === userId && expense.status === 'pending');

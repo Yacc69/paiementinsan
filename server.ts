@@ -7,6 +7,7 @@ import expensesRoutes from './server/routes/expenses.js';
 import employeesRoutes from './server/routes/employees.js';
 import categoriesRoutes from './server/routes/categories.js';
 import dashboardRoutes from './server/routes/dashboard.js';
+import notificationsRoutes from './server/routes/notifications.js';
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use('/api/expenses', expensesRoutes);
 app.use('/api/employees', employeesRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // --- Logique de démarrage ---
 if (process.env.NODE_ENV !== 'production') {
