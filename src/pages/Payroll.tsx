@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../api';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Users, History, Search, Trash2 } from 'lucide-react';
+// Ajout de Edit2 et X pour l'interface de modification
+import { Plus, Users, History, Search, Trash2, Edit2, X } from 'lucide-react';
 
 const getMonthOptions = () => {
   const options = [];
@@ -20,6 +21,8 @@ export default function Payroll() {
   const [totalPayroll, setTotalPayroll] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  // Nouvel état pour savoir quel salarié on modifie
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [filterMonth, setFilterMonth] = useState(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
   const [searchQuery, setSearchQuery] = useState('');
   const { user } = useAuth();
@@ -56,17 +59,23 @@ export default function Payroll() {
     return () => clearTimeout(timer);
   }, [filterMonth, searchQuery]);
 
+  // --- LOGIQUE DE SOUMISSION (AJOUT OU MODIFICATION) ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await fetchApi('/api/employees', {
-        method: 'POST',
+      const method = editingId ? 'PATCH' : 'POST';
+      const url = editingId ? `/api/employees/${editingId}` : '/api/employees';
+
+      await fetchApi(url, {
+        method: method,
         body: JSON.stringify({
           ...formData,
           salary: parseFloat(formData.salary)
         })
       });
+
       setShowForm(false);
+      setEditingId(null);
       setFormData({ first_name: '', last_name: '', salary: '', start_date: new Date().toISOString().split('T')[0] });
       loadData();
     } catch (err: any) {
@@ -74,7 +83,20 @@ export default function Payroll() {
     }
   };
 
-  // --- NOUVELLE FONCTION DE SUPPRESSION ---
+  // --- NOUVELLE FONCTION POUR PRE-REMPLIR LE FORMULAIRE ---
+  const handleEdit = (employee: any) => {
+    setEditingId(employee.id);
+    setFormData({
+      first_name: employee.first_name,
+      last_name: employee.last_name,
+      salary: employee.salary.toString(),
+      start_date: employee.start_date
+    });
+    setShowForm(true);
+    // Petit scroll automatique vers le formulaire
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleDelete = async (id: number) => {
     if (!confirm('Voulez-vous vraiment supprimer ce salarié ? Cette action est irréversible et les administrateurs seront notifiés.')) return;
     try {
@@ -117,11 +139,14 @@ export default function Payroll() {
           </div>
           {user?.role === 'admin' && (
             <button
-              onClick={() => setShowForm(!showForm)}
+              onClick={() => {
+                setShowForm(!showForm);
+                if (showForm) setEditingId(null); // Reset si on ferme
+              }}
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
             >
               <Plus className="-ml-1 mr-2 h-5 w-5" />
-              Ajouter un salarié
+              {editingId ? 'Mode Edition' : 'Ajouter un salarié'}
             </button>
           )}
         </div>
@@ -147,8 +172,15 @@ export default function Payroll() {
       </div>
 
       {showForm && (
-        <div className="bg-white shadow-xl rounded-lg p-6 border border-blue-100 animate-in zoom-in duration-200">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Nouveau salarié</h3>
+        <div className={`bg-white shadow-xl rounded-lg p-6 border-2 animate-in zoom-in duration-200 ${editingId ? 'border-orange-400' : 'border-blue-100'}`}>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-bold text-gray-900">
+              {editingId ? `Modifier : ${formData.first_name} ${formData.last_name}` : 'Nouveau salarié'}
+            </h3>
+            <button onClick={() => { setShowForm(false); setEditingId(null); }} className="text-gray-400 hover:text-gray-600">
+              <X size={20} />
+            </button>
+          </div>
           <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
             <div className="sm:col-span-3">
               <label className="block text-sm font-bold text-gray-700">Prénom</label>
@@ -198,16 +230,16 @@ export default function Payroll() {
             <div className="sm:col-span-6 flex justify-end space-x-3 border-t pt-4">
               <button
                 type="button"
-                onClick={() => setShowForm(false)}
+                onClick={() => { setShowForm(false); setEditingId(null); }}
                 className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-bold text-gray-700 hover:bg-gray-50"
               >
                 Annuler
               </button>
               <button
                 type="submit"
-                className="bg-blue-600 py-2 px-6 border border-transparent rounded-md shadow-sm text-sm font-bold text-white hover:bg-blue-700 transition-colors"
+                className={`py-2 px-6 border border-transparent rounded-md shadow-sm text-sm font-bold text-white transition-colors ${editingId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'}`}
               >
-                Enregistrer le salarié
+                {editingId ? 'Mettre à jour' : 'Enregistrer le salarié'}
               </button>
             </div>
           </form>
@@ -229,7 +261,7 @@ export default function Payroll() {
                 <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-widest">Date d'embauche</th>
                 <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-widest">Ajouté par</th>
                 <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-widest">Date d'ajout</th>
-                <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-widest uppercase">Actions</th>
+                <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-widest">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -251,15 +283,27 @@ export default function Payroll() {
                     {new Date(employee.added_at).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    {user?.role === 'admin' && (
+                    <div className="flex justify-end space-x-2">
+                      {/* BOUTON MODIFIER */}
                       <button
-                        onClick={() => handleDelete(employee.id)}
-                        className="text-gray-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-colors"
-                        title="Supprimer le salarié"
+                        onClick={() => handleEdit(employee)}
+                        className="text-blue-500 hover:text-blue-700 p-1.5 rounded-full hover:bg-blue-50 transition-colors"
+                        title="Modifier le salarié"
                       >
-                        <Trash2 className="h-5 w-5" />
+                        <Edit2 size={18} />
                       </button>
-                    )}
+                      
+                      {/* BOUTON SUPPRIMER */}
+                      {user?.role === 'admin' && (
+                        <button
+                          onClick={() => handleDelete(employee.id)}
+                          className="text-gray-400 hover:text-red-600 p-1.5 rounded-full hover:bg-red-50 transition-colors"
+                          title="Supprimer le salarié"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

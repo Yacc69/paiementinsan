@@ -193,4 +193,47 @@ router.get('/payroll', requireSuperAdmin, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * PATCH /:id - Modifier un salarié + Notification
+ */
+router.patch('/:id', requireSuperAdmin, async (req: AuthRequest, res) => {
+  const admin_email = req.user!.email;
+  const { id } = req.params;
+  const { first_name, last_name, salary, start_date } = req.body;
+
+  // 1. Récupérer les anciennes valeurs pour une notification précise
+  const { data: oldData } = await supabase
+    .from('employees')
+    .select('first_name, last_name, salary')
+    .eq('id', id)
+    .single();
+
+  // 2. Mise à jour
+  const { data, error } = await supabase
+    .from('employees')
+    .update({ 
+      first_name, 
+      last_name, 
+      salary: Number(salary), 
+      start_date 
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+
+  // 3. Notification détaillée
+  const changeMsg = oldData?.salary !== Number(salary) 
+    ? `(Salaire modifié : ${oldData?.salary}€ ➡️ ${salary}€)` 
+    : "";
+
+  await notifyAllAdmins(
+    "✏️ Salarié modifié",
+    `L'admin ${admin_email} a mis à jour la fiche de ${first_name} ${last_name}. ${changeMsg}`
+  );
+
+  res.json(data);
+});
+
 export default router;
