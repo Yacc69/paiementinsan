@@ -49,7 +49,7 @@ async function notifyAllAdmins(title: string, message: string) {
 }
 
 /**
- * GET / - Liste des dépenses (Mise à jour pour inclure le Nom Complet)
+ * GET / - Liste des dépenses
  */
 router.get('/', async (req: AuthRequest, res) => {
   const { role, id } = req.user!;
@@ -60,7 +60,7 @@ router.get('/', async (req: AuthRequest, res) => {
       *,
       category:categories(name),
       sub_category:sub_categories(name),
-      user:users!expenses_user_id_fkey(email, full_name),
+      user:users!expenses_user_id_fkey(email, first_name, last_name),
       approver:users!expenses_approved_by_fkey(email)
     `);
 
@@ -70,16 +70,26 @@ router.get('/', async (req: AuthRequest, res) => {
 
   const { data: expenses, error } = await query.order('created_at', { ascending: false });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    console.error("Erreur backend expenses:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
 
-  const formattedExpenses = expenses.map(e => ({
-    ...e,
-    category_name: e.category?.name,
-    sub_category_name: e.sub_category?.name,
-    user_email: e.user?.email,
-    user_full_name: e.user?.full_name, // Ajout du nom complet ici
-    approved_by_email: e.approver?.email
-  }));
+  const formattedExpenses = expenses.map(e => {
+    // Construction sécurisée du nom complet
+    const firstName = e.user?.first_name || '';
+    const lastName = e.user?.last_name || '';
+    const fullName = `${firstName} ${lastName}`.trim();
+
+    return {
+      ...e,
+      category_name: e.category?.name,
+      sub_category_name: e.sub_category?.name,
+      user_email: e.user?.email,
+      user_full_name: fullName || null, // Sera nul si profil non rempli
+      approved_by_email: e.approver?.email
+    };
+  });
 
   res.json(formattedExpenses);
 });

@@ -12,7 +12,7 @@ const getMonthBounds = (monthStr: string) => {
   return { start, end };
 };
 
-// --- GET / (Cartes et Donut) ---
+// --- GET / (Cartes, Donut et Hiérarchie) ---
 router.get('/', async (req: AuthRequest, res) => {
   const { role, id: userId } = req.user!;
   const { month } = req.query; 
@@ -26,7 +26,7 @@ router.get('/', async (req: AuthRequest, res) => {
       monthNext = bounds.end;
     }
 
-    // MASSE SALARIALE : AUTORISÉ POUR ADMIN ET ADMIN_LEVEL_1
+    // MASSE SALARIALE
     let totalPayrollValue = 0;
     if (role === 'admin' || role === 'admin_level_1') {
       const { data: employees } = await supabase.from('employees').select('salary, start_date');
@@ -35,33 +35,59 @@ router.get('/', async (req: AuthRequest, res) => {
       employees?.forEach(emp => {
         const start = new Date(emp.start_date);
         if (monthStart && monthNext) {
-          // Si on filtre par mois : on prend le salaire mensuel si l'employé était déjà là
           if (start < new Date(monthNext)) totalPayrollValue += Number(emp.salary);
         } else {
-          // Si cumul global : somme historique (mois de présence x salaire)
           const diff = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth()) + 1;
           if (diff > 0) totalPayrollValue += Number(emp.salary) * diff;
         }
       });
     }
 
-    // DÉPENSES : Filtrées seulement pour les simples collaborateurs
-    let expQuery = supabase.from('expenses').select('amount, category:categories(name)').eq('status', 'approved');
+    // DÉPENSES AVEC SOUS-CATÉGORIES
+    // Note: On ajoute sub_category dans le select
+    let expQuery = supabase
+      .from('expenses')
+      .select(`
+        amount, 
+        category:categories(name),
+        sub_category:sub_categories(name)
+      `)
+      .eq('status', 'approved');
+
     if (role !== 'admin' && role !== 'admin_level_1') {
       expQuery = expQuery.eq('user_id', userId);
     }
     if (monthStart && monthNext) expQuery = expQuery.gte('date', monthStart).lt('date', monthNext);
 
     const { data: expensesData } = await expQuery;
-    const expensesByCategoryMap: Record<string, number> = {};
+
+    // --- LOGIQUE DE GROUPEMENT HIÉRARCHIQUE ---
+    const categoriesMap: Record<string, any> = {};
+
     expensesData?.forEach((e: any) => {
-      const name = e.category?.name || 'Inconnu';
-      expensesByCategoryMap[name] = (expensesByCategoryMap[name] || 0) + Number(e.amount);
+      const catName = e.category?.name || 'Inconnu';
+      const subName = e.sub_category?.name || 'Général';
+      const amount = Number(e.amount);
+
+      if (!categoriesMap[catName]) {
+        categoriesMap[catName] = { 
+          name: catName, 
+          total: 0, 
+          subFamilies: {} 
+        };
+      }
+
+      categoriesMap[catName].total += amount;
+
+      if (!categoriesMap[catName].subFamilies[subName]) {
+        categoriesMap[catName].subFamilies[subName] = 0;
+      }
+      categoriesMap[catName].subFamilies[subName] += amount;
     });
 
     res.json({
-      expensesByCategory: Object.entries(expensesByCategoryMap).map(([name, total]) => ({ name, total })),
-      totalExpenses: Object.values(expensesByCategoryMap).reduce((a, b) => a + b, 0),
+      expensesByCategory: Object.values(categoriesMap), // Renvoie maintenant l'objet complet avec subFamilies
+      totalExpenses: expensesData?.reduce((sum, e) => sum + Number(e.amount), 0) || 0,
       totalPayroll: totalPayrollValue,
     });
   } catch (err: any) { 
@@ -75,7 +101,6 @@ router.get('/comparison', async (req: AuthRequest, res) => {
   const { months, type, categories: categoryIds } = req.query;
   if (!months) return res.status(400).json({ error: 'Mois requis' });
 
-  // Sécurité : Seul Admin et Manager peuvent voir la Payroll
   if (type === 'payroll' && role !== 'admin' && role !== 'admin_level_1') {
     return res.status(403).json({ error: 'Accès refusé' });
   }
@@ -90,7 +115,6 @@ router.get('/comparison', async (req: AuthRequest, res) => {
       const { start, end } = getMonthBounds(m);
       const targetDate = new Date(end);
 
-      // Payroll autorisée pour Admin et Level 1
       const monthlyPayroll = (role === 'admin' || role === 'admin_level_1')
         ? (employees?.filter(emp => new Date(emp.start_date) < targetDate).reduce((sum, emp) => sum + Number(emp.salary), 0) || 0)
         : 0;

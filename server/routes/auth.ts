@@ -173,5 +173,24 @@ router.post('/logout', async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   res.json({ message: 'Déconnexion réussie' });
 });
+/**
+ * PATCH /update-profile - Modifier ses informations personnelles
+ */
+router.patch('/update-profile', authenticateToken, async (req: AuthRequest, res) => {
+  const { first_name, last_name } = req.body;
+  const userId = req.user!.id;
+
+  const { data, error } = await supabase
+    .from('users')
+    .update({ first_name, last_name })
+    .eq('id', userId)
+    .select()
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+
+  // On renvoie les données mises à jour pour que le frontend rafraîchisse le contexte
+  res.json(data);
+});
 
 export default router;

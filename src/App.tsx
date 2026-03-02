@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Expenses from './pages/Expenses';
 import Payroll from './pages/Payroll';
 import Admin from './pages/Admin';
+import Settings from './pages/Settings';
 
 const PrivateRoute = ({ children, adminOnly = false, superAdminOnly = false }: { children: ReactNode, adminOnly?: boolean, superAdminOnly?: boolean }) => {
   const { user, loading } = useAuth();
@@ -31,6 +32,7 @@ export default function App() {
             <Route path="expenses" element={<Expenses />} />
             <Route path="payroll" element={<PrivateRoute superAdminOnly><Payroll /></PrivateRoute>} />
             <Route path="admin" element={<PrivateRoute adminOnly><Admin /></PrivateRoute>} />
+            <Route path="settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

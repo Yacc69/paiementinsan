@@ -300,7 +300,10 @@ export default function Expenses() {
                   <div className="text-xs text-gray-400">
                     {(user?.role === 'admin' || user?.role === 'admin_level_1') && (
                       <span className="text-indigo-600 font-bold uppercase tracking-tight">
-                        {expense.user_full_name || 'Utilisateur'} ({expense.user_email}) • 
+                        {/* Affiche le Nom Complet construit ou l'Email en cas d'absence */}
+                        {expense.user_full_name && expense.user_full_name !== "" 
+                          ? expense.user_full_name 
+                          : expense.user_email} • 
                       </span>
                     )}
                     {expense.attachment && (

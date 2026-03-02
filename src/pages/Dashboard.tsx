@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
-// AJOUT DE CHEVRON POUR L'ACCORDÉON
 import { TrendingUp, Users, Receipt, Calendar, RefreshCw, Filter, Shield, ChevronDown, ChevronRight, Layers } from 'lucide-react';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
@@ -37,15 +36,13 @@ export default function Dashboard() {
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterMonth, setFilterMonth] = useState('');
+  const [expandedCats, setExpandedCats] = useState<string[]>([]);
   
   const [monthsToCompare, setMonthsToCompare] = useState<string[]>([]);
   const [comparisonType, setComparisonType] = useState<'category' | 'total' | 'payroll'>('total');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [comparisonData, setComparisonData] = useState<any>(null);
   const [isComparing, setIsComparing] = useState(false);
-
-  // --- NOUVEL ÉTAT POUR L'ACCORDÉON ---
-  const [expandedCats, setExpandedCats] = useState<string[]>([]);
 
   const isManager = user?.role === 'admin' || user?.role === 'admin_level_1';
 
@@ -81,7 +78,6 @@ export default function Dashboard() {
     finally { setIsComparing(false); }
   };
 
-  // --- LOGIQUE POUR DÉROULER/FERMER ---
   const toggleCat = (name: string) => {
     setExpandedCats(prev => prev.includes(name) ? prev.filter(c => c !== name) : [...prev, name]);
   };
@@ -112,7 +108,7 @@ export default function Dashboard() {
           <h2 className="text-xl font-bold text-gray-800">Vue d'ensemble</h2>
           {user?.role === 'admin_level_1' && <p className="text-xs text-indigo-600 font-bold uppercase tracking-widest mt-1 flex items-center gap-1"><Shield size={12}/> Mode Manager</p>}
         </div>
-        <select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} className="border rounded-lg p-1.5 text-sm font-bold bg-gray-50">
+        <select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} className="border rounded-lg p-1.5 text-sm font-bold bg-gray-50 outline-none">
           <option value="">Cumul Global</option>
           {getMonthOptions().map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
@@ -149,16 +145,16 @@ export default function Dashboard() {
               <button onClick={() => setComparisonType('payroll')} className={`px-4 py-2 rounded-lg text-xs font-bold ${comparisonType === 'payroll' ? 'bg-white shadow text-green-600' : 'text-gray-500'}`}>Salaires</button>
             )}
           </div>
-          <button onClick={handleRunComparison} className="bg-indigo-600 text-white px-5 py-2 rounded-lg font-bold shadow-lg flex items-center gap-2">
+          <button onClick={handleRunComparison} className="bg-indigo-600 text-white px-5 py-2 rounded-lg font-bold shadow-lg flex items-center gap-2 transition-all active:scale-95">
             <RefreshCw className={isComparing ? 'animate-spin' : ''} size={16} /> Actualiser
           </button>
         </div>
 
         {comparisonType === 'category' && (
-          <div className="mb-6 flex flex-wrap gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="mb-6 flex flex-wrap gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200 animate-in slide-in-from-top-2 duration-300">
             <p className="text-xs font-bold text-gray-400 w-full mb-1">Filtrer par familles :</p>
             {categories.map(c => (
-              <button key={c.id} onClick={() => setSelectedCategories(prev => prev.includes(c.id.toString()) ? prev.filter(x => x !== c.id.toString()) : [...prev, c.id.toString()])} className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${selectedCategories.includes(c.id.toString()) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 hover:border-blue-400'}`}>{c.name}</button>
+              <button key={c.id} onClick={() => setSelectedCategories(prev => prev.includes(c.id.toString()) ? prev.filter(x => x !== c.id.toString()) : [...prev, c.id.toString()])} className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${selectedCategories.includes(c.id.toString()) ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-600 hover:border-blue-400'}`}>{c.name}</button>
             ))}
           </div>
         )}
@@ -204,7 +200,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* --- NOUVELLE SECTION : HIÉRARCHIE FAMILLES ET SOUS-FAMILLES --- */}
+      {/* --- SECTION DES SOUS-FAMILLES (ACCORDÉON) --- */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-5 border-b border-gray-100 bg-gray-50/50 flex items-center gap-2">
           <Layers size={18} className="text-indigo-500" />
@@ -216,10 +212,10 @@ export default function Dashboard() {
             <div key={cat.name} className="transition-all">
               <button 
                 onClick={() => toggleCat(cat.name)}
-                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors group"
               >
                 <div className="flex items-center gap-3">
-                  <div className={`p-1 rounded transition-colors ${expandedCats.includes(cat.name) ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-400'}`}>
+                  <div className={`p-1 rounded transition-colors ${expandedCats.includes(cat.name) ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-400 group-hover:bg-gray-200'}`}>
                     {expandedCats.includes(cat.name) ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}
                   </div>
                   <span className="font-bold text-gray-800 text-sm">{cat.name}</span>
@@ -227,11 +223,12 @@ export default function Dashboard() {
                 <span className="font-black text-indigo-600">{cat.total.toLocaleString()} €</span>
               </button>
               
+              {/* Affichage des sous-familles si ouvert */}
               {expandedCats.includes(cat.name) && cat.subFamilies && (
-                <div className="bg-indigo-50/30 px-12 py-3 space-y-2 border-t border-indigo-50">
+                <div className="bg-slate-50/50 px-12 py-3 space-y-2 border-t border-gray-50 animate-in slide-in-from-top-1 duration-200">
                   {Object.entries(cat.subFamilies).map(([subName, subTotal]: any) => (
-                    <div key={subName} className="flex justify-between items-center text-xs py-1 border-b border-gray-100 last:border-0">
-                      <span className="text-gray-600 font-semibold">{subName}</span>
+                    <div key={subName} className="flex justify-between items-center text-xs py-2 border-b border-white last:border-0">
+                      <span className="text-gray-600 font-medium">{subName}</span>
                       <span className="font-bold text-gray-900 bg-white px-2 py-0.5 rounded border border-gray-100 shadow-sm">
                         {subTotal.toLocaleString()} €
                       </span>
