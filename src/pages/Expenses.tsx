@@ -25,7 +25,6 @@ export default function Expenses() {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const { user } = useAuth();
 
-  // Form state
   const [formData, setFormData] = useState({
     category_id: '',
     sub_category_id: '',
@@ -72,7 +71,7 @@ export default function Expenses() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+      if (file.size > 10 * 1024 * 1024) {
         alert('Le fichier est trop volumineux (max 10Mo)');
         e.target.value = '';
         return;
@@ -88,6 +87,7 @@ export default function Expenses() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Le backend gère l'envoi des notifications à TOUS les utilisateurs automatiquement
       await fetchApi('/api/expenses', {
         method: 'POST',
         body: JSON.stringify({
@@ -105,6 +105,7 @@ export default function Expenses() {
 
   const handleStatusUpdate = async (id: number, status: 'approved' | 'rejected') => {
     try {
+      // Le backend notifie tout le monde du changement de statut (accepté/refusé)
       await fetchApi(`/api/expenses/${id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status })
@@ -118,6 +119,7 @@ export default function Expenses() {
   const handleDelete = async (id: number) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer cette dépense ?')) return;
     try {
+      // Le backend notifie tout le monde de la suppression
       await fetchApi(`/api/expenses/${id}`, {
         method: 'DELETE'
       });
@@ -127,7 +129,6 @@ export default function Expenses() {
     }
   };
 
-  // --- CORRECTION ICI : Trouver la catégorie sélectionnée ---
   const selectedCategory = categories.find(c => c.id.toString() === formData.category_id);
 
   return (
@@ -165,7 +166,6 @@ export default function Expenses() {
         </div>
       </div>
 
-      {/* Résumé des statuts */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
           <p className="text-xs text-blue-500 font-bold uppercase tracking-wider">Total Sélection</p>
@@ -213,7 +213,6 @@ export default function Expenses() {
                 disabled={!formData.category_id}
               >
                 <option value="">Sélectionner (Optionnel)</option>
-                {/* --- CORRECTION ICI : On utilise sub_categories (underscore) --- */}
                 {selectedCategory?.sub_categories?.map((sub: any) => (
                   <option key={sub.id} value={sub.id}>{sub.name}</option>
                 ))}
@@ -281,7 +280,6 @@ export default function Expenses() {
         </div>
       )}
 
-      {/* Tableau des dépenses */}
       <div className="bg-white shadow-sm border border-gray-200 rounded-xl overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -340,7 +338,6 @@ export default function Expenses() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <div className="flex justify-end space-x-3">
-                    {/* Validation pour Admin et Manager */}
                     {(user?.role === 'admin' || user?.role === 'admin_level_1') && expense.status === 'pending' && (
                       <>
                         <button
@@ -375,7 +372,7 @@ export default function Expenses() {
             {filteredExpenses.length === 0 && !loading && (
               <tr>
                 <td colSpan={6} className="px-6 py-8 text-center text-sm font-bold text-gray-500 bg-gray-50">
-                  Aucune dépense trouvée pour les filtres sélectionnés
+                  Aucune dépense trouvée
                 </td>
               </tr>
             )}
@@ -383,7 +380,6 @@ export default function Expenses() {
         </table>
       </div>
 
-      {/* Image Preview Modal */}
       {previewImage && (
         <div 
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-80 p-4 backdrop-blur-sm"

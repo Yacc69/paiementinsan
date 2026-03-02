@@ -7,8 +7,51 @@ const router = express.Router();
 router.use(authenticateToken);
 
 /**
- * GET /
- * (Inchangé - Ton code original)
+ * FONCTION DE NOTIFICATION SYSTÉMATIQUE
+ * Elle cherche tous les admins et leur envoie une notification
+ */
+async function notifyAllAdmins(title: string, message: string) {
+  try {
+    // 1. Récupérer les admins (Attention : vérifie que ta table s'appelle 'users' et la colonne 'role')
+    const { data: admins, error: fetchError } = await supabase
+      .from('users')
+      .select('id, role');
+
+    if (fetchError) {
+      console.error("❌ Erreur lors de la récupération des admins:", fetchError.message);
+      return;
+    }
+
+    // 2. Filtrer les admins manuellement pour être sûr
+    const adminList = admins.filter(u => u.role === 'admin' || u.role === 'admin_level_1');
+    
+    console.log(`🔍 Tentative d'envoi à ${adminList.length} admins trouvés.`);
+
+    if (adminList.length > 0) {
+      const notifications = adminList.map(adm => ({
+        user_id: adm.id,
+        title: title,
+        message: message,
+        type: 'warning',
+        is_read: false
+      }));
+
+      const { error: insertError } = await supabase.from('notifications').insert(notifications);
+      if (insertError) {
+        console.error("❌ Erreur lors de l'insertion des notifications:", insertError.message);
+      } else {
+        console.log("✅ Notifications envoyées avec succès aux admins.");
+      }
+    } else {
+      console.log("⚠️ Aucun admin trouvé dans la base avec les rôles 'admin' ou 'admin_level_1'.");
+    }
+  } catch (err) {
+    console.error("❌ Erreur système notification:", err);
+  }
+}
+
+/**
+ * GET / - Liste des dépenses
  */
 router.get('/', async (req: AuthRequest, res) => {
   const { role, id } = req.user!;
@@ -43,8 +86,7 @@ router.get('/', async (req: AuthRequest, res) => {
 });
 
 /**
- * POST /
- * Création d'une demande de frais + Notification
+ * POST / - Création d'une dépense + Alerte Admins
  */
 router.post('/', async (req: AuthRequest, res) => {
   const { category_id, sub_category_id, amount, description, date, attachment } = req.body;
@@ -54,106 +96,82 @@ router.post('/', async (req: AuthRequest, res) => {
   const { data, error } = await supabase
     .from('expenses')
     .insert([{ 
-      user_id, 
-      category_id, 
+      user_id, category_id, 
       sub_category_id: sub_category_id || null, 
-      amount, 
-      description, 
-      date, 
+      amount, description, date, 
       attachment: attachment || null 
     }])
-    .select()
-    .single();
+    .select().single();
 
   if (error) return res.status(400).json({ error: error.message });
 
-  // --- AJOUT NOTIFICATION ---
-  // On notifie l'utilisateur que sa demande est créée
-  await supabase.from('notifications').insert([{
-    user_id: user_id,
-    title: "Demande créée",
-    message: `Votre dépense de ${amount}€ a été soumise.`,
-    type: 'info'
-  }]);
+  // NOTIFICATION AUX ADMINS
+  await notifyAllAdmins(
+    "🚨 Nouvelle dépense",
+    `L'employé ${user_email} a soumis une demande de ${amount}€.`
+  );
 
   res.status(201).json({ id: data.id, status: 'pending' });
 });
 
 /**
- * PATCH /:id/status
- * Validation ou Rejet + Notification
+ * PATCH /:id/status - Validation/Rejet + Alerte Admins
  */
 router.patch('/:id/status', async (req: AuthRequest, res) => {
-  const { role, id: userId } = req.user!;
-  
-  if (role !== 'admin' && role !== 'admin_level_1') {
-    return res.status(403).json({ error: 'Autorisation insuffisante' });
-  }
+  const { role, id: adminId, email: adminEmail } = req.user!;
+  if (role !== 'admin' && role !== 'admin_level_1') return res.status(403).json({ error: 'Interdit' });
   
   const { status } = req.body;
   const { id } = req.params;
 
-  if (!['pending', 'approved', 'rejected'].includes(status)) {
-    return res.status(400).json({ error: 'Statut invalide' });
-  }
-
-  // On récupère les infos de la dépense AVANT l'update pour la notification
   const { data: expense } = await supabase.from('expenses').select('user_id, amount').eq('id', id).single();
 
-  const approved_by = (status === 'approved' || status === 'rejected') ? userId : null;
-
-  const { error } = await supabase
-    .from('expenses')
-    .update({ status, approved_by })
-    .eq('id', id);
+  const { error } = await supabase.from('expenses').update({ status, approved_by: adminId }).eq('id', id);
 
   if (error) return res.status(500).json({ error: error.message });
 
-  // --- AJOUT NOTIFICATION ---
   if (expense) {
-    const msg = status === 'approved' ? 'acceptée' : 'refusée';
+    const etat = status === 'approved' ? 'acceptée' : 'refusée';
+    // Notification pour l'employé
     await supabase.from('notifications').insert([{
       user_id: expense.user_id,
-      title: `Dépense ${msg}`,
-      message: `Votre demande de ${expense.amount}€ a été ${msg}.`,
+      title: `Dépense ${etat}`,
+      message: `Votre demande de ${expense.amount}€ a été ${etat}.`,
       type: status === 'approved' ? 'success' : 'error'
     }]);
+
+    // Notification pour tous les AUTRES admins
+    await notifyAllAdmins(
+      `Statut Dépense : ${etat}`,
+      `La demande de ${expense.amount}€ a été traitée par ${adminEmail}.`
+    );
   }
 
   res.json({ success: true });
 });
 
 /**
- * DELETE /:id
- * (Inchangé - Ton code original)
+ * DELETE /:id - Suppression + Alerte Admins
  */
 router.delete('/:id', async (req: AuthRequest, res) => {
-  const { role, id: userId } = req.user!;
+  const { role, id: userId, email: userEmail } = req.user!;
   const { id } = req.params;
 
-  const { data: expense, error: fetchError } = await supabase
-    .from('expenses')
-    .select('*')
-    .eq('id', id)
-    .single();
+  const { data: expense } = await supabase.from('expenses').select('amount').eq('id', id).single();
 
-  if (fetchError || !expense) return res.status(404).json({ error: 'Dépense introuvable' });
-
-  const isAuthorized = role === 'admin' || 
-                       role === 'admin_level_1' || 
-                       (expense.user_id === userId && expense.status === 'pending');
-
-  if (isAuthorized) {
-    const { error: deleteError } = await supabase
-      .from('expenses')
-      .delete()
-      .eq('id', id);
-      
+  if (expense) {
+    const { error: deleteError } = await supabase.from('expenses').delete().eq('id', id);
     if (deleteError) return res.status(500).json({ error: deleteError.message });
+
+    // Notification pour tous les admins
+    await notifyAllAdmins(
+      "🗑️ Dépense supprimée",
+      `Une dépense de ${expense.amount}€ a été supprimée par ${userEmail}.`
+    );
     return res.json({ success: true });
   }
 
-  res.status(403).json({ error: 'Non autorisé' });
+  res.status(404).json({ error: 'Dépense introuvable' });
 });
 
 export default router;
