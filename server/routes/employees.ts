@@ -110,6 +110,43 @@ router.post('/', requireSuperAdmin, async (req: AuthRequest, res) => {
 });
 
 /**
+ * DELETE /:id - Supprimer un salarié + Notification
+ */
+router.delete('/:id', requireSuperAdmin, async (req: AuthRequest, res) => {
+  const admin_email = req.user!.email;
+  const { id } = req.params;
+
+  // 1. Récupérer les infos du salarié avant suppression pour la notification
+  const { data: employee, error: fetchError } = await supabase
+    .from('employees')
+    .select('first_name, last_name')
+    .eq('id', id)
+    .single();
+
+  if (fetchError || !employee) {
+    return res.status(404).json({ error: "Salarié introuvable" });
+  }
+
+  // 2. Supprimer le salarié
+  const { error: deleteError } = await supabase
+    .from('employees')
+    .delete()
+    .eq('id', id);
+
+  if (deleteError) {
+    return res.status(500).json({ error: deleteError.message });
+  }
+
+  // 3. Envoyer la notification de suppression aux admins
+  await notifyAllAdmins(
+    "🗑️ Salarié supprimé",
+    `L'admin ${admin_email} a supprimé ${employee.first_name} ${employee.last_name} de la liste du personnel.`
+  );
+
+  res.json({ success: true, message: "Salarié supprimé avec succès" });
+});
+
+/**
  * GET /payroll - Calcul de la masse salariale (Mensuelle ou Cumulative)
  */
 router.get('/payroll', requireSuperAdmin, async (req: AuthRequest, res) => {

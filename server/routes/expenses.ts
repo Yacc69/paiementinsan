@@ -12,7 +12,6 @@ router.use(authenticateToken);
  */
 async function notifyAllAdmins(title: string, message: string) {
   try {
-    // 1. Récupérer les admins (Attention : vérifie que ta table s'appelle 'users' et la colonne 'role')
     const { data: admins, error: fetchError } = await supabase
       .from('users')
       .select('id, role');
@@ -22,7 +21,6 @@ async function notifyAllAdmins(title: string, message: string) {
       return;
     }
 
-    // 2. Filtrer les admins manuellement pour être sûr
     const adminList = admins.filter(u => u.role === 'admin' || u.role === 'admin_level_1');
     
     console.log(`🔍 Tentative d'envoi à ${adminList.length} admins trouvés.`);
@@ -51,7 +49,7 @@ async function notifyAllAdmins(title: string, message: string) {
 }
 
 /**
- * GET / - Liste des dépenses
+ * GET / - Liste des dépenses (Mise à jour pour inclure le Nom Complet)
  */
 router.get('/', async (req: AuthRequest, res) => {
   const { role, id } = req.user!;
@@ -62,7 +60,7 @@ router.get('/', async (req: AuthRequest, res) => {
       *,
       category:categories(name),
       sub_category:sub_categories(name),
-      user:users!expenses_user_id_fkey(email),
+      user:users!expenses_user_id_fkey(email, full_name),
       approver:users!expenses_approved_by_fkey(email)
     `);
 
@@ -79,6 +77,7 @@ router.get('/', async (req: AuthRequest, res) => {
     category_name: e.category?.name,
     sub_category_name: e.sub_category?.name,
     user_email: e.user?.email,
+    user_full_name: e.user?.full_name, // Ajout du nom complet ici
     approved_by_email: e.approver?.email
   }));
 
@@ -105,7 +104,6 @@ router.post('/', async (req: AuthRequest, res) => {
 
   if (error) return res.status(400).json({ error: error.message });
 
-  // NOTIFICATION AUX ADMINS
   await notifyAllAdmins(
     "🚨 Nouvelle dépense",
     `L'employé ${user_email} a soumis une demande de ${amount}€.`
@@ -132,7 +130,6 @@ router.patch('/:id/status', async (req: AuthRequest, res) => {
 
   if (expense) {
     const etat = status === 'approved' ? 'acceptée' : 'refusée';
-    // Notification pour l'employé
     await supabase.from('notifications').insert([{
       user_id: expense.user_id,
       title: `Dépense ${etat}`,
@@ -140,7 +137,6 @@ router.patch('/:id/status', async (req: AuthRequest, res) => {
       type: status === 'approved' ? 'success' : 'error'
     }]);
 
-    // Notification pour tous les AUTRES admins
     await notifyAllAdmins(
       `Statut Dépense : ${etat}`,
       `La demande de ${expense.amount}€ a été traitée par ${adminEmail}.`
@@ -163,7 +159,6 @@ router.delete('/:id', async (req: AuthRequest, res) => {
     const { error: deleteError } = await supabase.from('expenses').delete().eq('id', id);
     if (deleteError) return res.status(500).json({ error: deleteError.message });
 
-    // Notification pour tous les admins
     await notifyAllAdmins(
       "🗑️ Dépense supprimée",
       `Une dépense de ${expense.amount}€ a été supprimée par ${userEmail}.`

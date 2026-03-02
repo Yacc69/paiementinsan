@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
-import { TrendingUp, Users, Receipt, Calendar, RefreshCw, Filter, Shield } from 'lucide-react';
+// AJOUT DE CHEVRON POUR L'ACCORDÉON
+import { TrendingUp, Users, Receipt, Calendar, RefreshCw, Filter, Shield, ChevronDown, ChevronRight, Layers } from 'lucide-react';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
 
@@ -43,7 +44,9 @@ export default function Dashboard() {
   const [comparisonData, setComparisonData] = useState<any>(null);
   const [isComparing, setIsComparing] = useState(false);
 
-  // Vérification si l'utilisateur a des droits de gestion (Admin ou Level 1)
+  // --- NOUVEL ÉTAT POUR L'ACCORDÉON ---
+  const [expandedCats, setExpandedCats] = useState<string[]>([]);
+
   const isManager = user?.role === 'admin' || user?.role === 'admin_level_1';
 
   const loadData = async () => {
@@ -76,6 +79,11 @@ export default function Dashboard() {
       setComparisonData(data);
     } catch (err) { console.error(err); }
     finally { setIsComparing(false); }
+  };
+
+  // --- LOGIQUE POUR DÉROULER/FERMER ---
+  const toggleCat = (name: string) => {
+    setExpandedCats(prev => prev.includes(name) ? prev.filter(c => c !== name) : [...prev, name]);
   };
 
   let chartData: any[] = [];
@@ -116,7 +124,6 @@ export default function Dashboard() {
           <div><p className="text-xs font-bold text-gray-400 uppercase tracking-widest">{isManager ? 'Dépenses Entreprise' : 'Mes Dépenses'}</p><p className="text-2xl font-black text-gray-800">{stats?.totalExpenses.toLocaleString()} €</p></div>
         </div>
         
-        {/* MASSE SALARIALE : VISIBLE POUR ADMIN ET MANAGER LEVEL 1 */}
         {isManager && (
           <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500 flex items-center gap-4">
             <div className="p-3 bg-green-50 rounded-lg"><Users className="text-green-600" /></div>
@@ -185,15 +192,55 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-center text-center">
-           <div className="p-8 bg-indigo-50/50 rounded-3xl border border-indigo-100">
-             <TrendingUp className="text-indigo-600 mb-3 mx-auto" size={32} />
-             <h4 className="font-black text-gray-800 text-lg uppercase tracking-tight">Analyse de Performance</h4>
-             <p className="text-sm text-gray-600 mt-3 leading-relaxed font-medium">
-               {isManager ? 
-                "Vous accédez à la vue complète incluant les charges de personnel et les dépenses opérationnelles globales." : 
-                "Vous suivez ici l'évolution de vos demandes de frais personnels approuvées."}
-             </p>
-           </div>
+            <div className="p-8 bg-indigo-50/50 rounded-3xl border border-indigo-100">
+              <TrendingUp className="text-indigo-600 mb-3 mx-auto" size={32} />
+              <h4 className="font-black text-gray-800 text-lg uppercase tracking-tight">Analyse de Performance</h4>
+              <p className="text-sm text-gray-600 mt-3 leading-relaxed font-medium">
+                {isManager ? 
+                 "Vous accédez à la vue complète incluant les charges de personnel et les dépenses opérationnelles globales." : 
+                 "Vous suivez ici l'évolution de vos demandes de frais personnels approuvées."}
+              </p>
+            </div>
+        </div>
+      </div>
+
+      {/* --- NOUVELLE SECTION : HIÉRARCHIE FAMILLES ET SOUS-FAMILLES --- */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="p-5 border-b border-gray-100 bg-gray-50/50 flex items-center gap-2">
+          <Layers size={18} className="text-indigo-500" />
+          <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wider">Détails des Sous-Familles</h3>
+        </div>
+        
+        <div className="divide-y divide-gray-100">
+          {stats?.expensesByCategory?.map((cat: any) => (
+            <div key={cat.name} className="transition-all">
+              <button 
+                onClick={() => toggleCat(cat.name)}
+                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`p-1 rounded transition-colors ${expandedCats.includes(cat.name) ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-400'}`}>
+                    {expandedCats.includes(cat.name) ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}
+                  </div>
+                  <span className="font-bold text-gray-800 text-sm">{cat.name}</span>
+                </div>
+                <span className="font-black text-indigo-600">{cat.total.toLocaleString()} €</span>
+              </button>
+              
+              {expandedCats.includes(cat.name) && cat.subFamilies && (
+                <div className="bg-indigo-50/30 px-12 py-3 space-y-2 border-t border-indigo-50">
+                  {Object.entries(cat.subFamilies).map(([subName, subTotal]: any) => (
+                    <div key={subName} className="flex justify-between items-center text-xs py-1 border-b border-gray-100 last:border-0">
+                      <span className="text-gray-600 font-semibold">{subName}</span>
+                      <span className="font-bold text-gray-900 bg-white px-2 py-0.5 rounded border border-gray-100 shadow-sm">
+                        {subTotal.toLocaleString()} €
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
     </div>

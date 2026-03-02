@@ -87,7 +87,6 @@ export default function Expenses() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // Le backend gère l'envoi des notifications à TOUS les utilisateurs automatiquement
       await fetchApi('/api/expenses', {
         method: 'POST',
         body: JSON.stringify({
@@ -105,7 +104,6 @@ export default function Expenses() {
 
   const handleStatusUpdate = async (id: number, status: 'approved' | 'rejected') => {
     try {
-      // Le backend notifie tout le monde du changement de statut (accepté/refusé)
       await fetchApi(`/api/expenses/${id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status })
@@ -119,7 +117,6 @@ export default function Expenses() {
   const handleDelete = async (id: number) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer cette dépense ?')) return;
     try {
-      // Le backend notifie tout le monde de la suppression
       await fetchApi(`/api/expenses/${id}`, {
         method: 'DELETE'
       });
@@ -301,7 +298,11 @@ export default function Expenses() {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div className="font-bold">{expense.description || '-'}</div>
                   <div className="text-xs text-gray-400">
-                    {(user?.role === 'admin' || user?.role === 'admin_level_1') && <span>Demandeur: {expense.user_email} • </span>}
+                    {(user?.role === 'admin' || user?.role === 'admin_level_1') && (
+                      <span className="text-indigo-600 font-bold uppercase tracking-tight">
+                        {expense.user_full_name || 'Utilisateur'} ({expense.user_email}) • 
+                      </span>
+                    )}
                     {expense.attachment && (
                       <button 
                         onClick={() => setPreviewImage(expense.attachment)}
