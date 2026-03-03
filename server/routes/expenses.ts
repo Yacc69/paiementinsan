@@ -204,4 +204,29 @@ router.patch('/:id', authenticateToken, async (req: AuthRequest, res) => {
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });
+
+/**
+ * PATCH /:id/pay - Confirmer le paiement avec preuve
+ */
+router.patch('/:id/pay', authenticateToken, async (req: AuthRequest, res) => {
+  if (req.user?.role !== 'admin' && req.user?.role !== 'admin_level_1') {
+    return res.status(403).json({ error: 'Interdit' });
+  }
+
+  const { id } = req.params;
+  const { payment_proof } = req.body;
+
+  const { data, error } = await supabase
+    .from('expenses')
+    .update({ 
+      status: 'paid', // Nouveau statut
+      payment_proof: payment_proof // Stockage du virement
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
 export default router;

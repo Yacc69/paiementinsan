@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import * as XLSX from 'xlsx'; // IMPORTATION XLSX
 import { 
   Plus, Check, X, Filter, Trash2, Edit2, Save, 
-  Search, CheckSquare, Square, FileText, FileArchive, Image as ImageIcon, Download, FileSpreadsheet
+  Search, CheckSquare, Square, FileText, FileArchive, Image as ImageIcon, Download, FileSpreadsheet, CreditCard
 } from 'lucide-react';
 
 const getMonthOptions = () => {
@@ -25,11 +25,13 @@ export default function Expenses() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showPayModal, setShowPayModal] = useState<number | null>(null); // ÉTAT MODAL PAIEMENT
   const [filterCategory, setFilterCategory] = useState('');
   const [filterMonth, setFilterMonth] = useState('');
   const [searchQuery, setSearchQuery] = useState(''); 
   const [selectedIds, setSelectedIds] = useState<number[]>([]); 
   const [previewFile, setPreviewFile] = useState<string | null>(null);
+  const [paymentProof, setPaymentProof] = useState(''); // ÉTAT PREUVE VIREMENT
   const { user } = useAuth();
 
   const [formData, setFormData] = useState({
@@ -84,7 +86,6 @@ export default function Expenses() {
 
   // --- LOGIQUE EXPORT EXCEL ---
   const handleExportExcel = () => {
-    // 1. Préparation des données proprement nommées
     const dataToExport = filteredExpenses.map(e => ({
       'DATE': new Date(e.date).toLocaleDateString('fr-FR'),
       'COLLABORATEUR': e.user_full_name || e.user_email,
@@ -92,50 +93,37 @@ export default function Expenses() {
       'FAMILLE': e.category_name,
       'SOUS-FAMILLE': e.sub_category_name || 'Général',
       'MONTANT (€)': e.amount,
-      'STATUT': e.status === 'approved' ? 'Approuvé' : e.status === 'rejected' ? 'Rejeté' : 'En attente'
+      'STATUT': e.status === 'paid' ? 'Payé' : (e.status === 'approved' ? 'Approuvé' : (e.status === 'rejected' ? 'Rejeté' : 'En attente'))
     }));
 
-    // 2. Création du classeur
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Dépenses");
-
-    // 3. Ajustement auto des colonnes
-    const wscols = [
-      { wch: 12 }, { wch: 25 }, { wch: 40 }, { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 15 }
-    ];
+    const wscols = [{ wch: 12 }, { wch: 25 }, { wch: 40 }, { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 15 }];
     worksheet['!cols'] = wscols;
-
-    // 4. Téléchargement du fichier
-    const fileName = `Export_FinManage_${filterMonth || 'Total'}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
+    XLSX.writeFile(workbook, `Export_FinManage_${filterMonth || 'Total'}.xlsx`);
   };
 
   const toggleSelect = (id: number) => {
-    setSelectedIds(prev => 
-      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
-    );
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.length === filteredExpenses.length) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(filteredExpenses.map(e => e.id));
-    }
+    if (selectedIds.length === filteredExpenses.length) setSelectedIds([]);
+    else setSelectedIds(filteredExpenses.map(e => e.id));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, isPayment: boolean = false) => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 15 * 1024 * 1024) {
         alert('Fichier trop lourd (max 15Mo)');
-        e.target.value = '';
         return;
       }
       const reader = new FileReader();
       reader.onloadend = () => {
-        setFormData({ ...formData, attachment: reader.result as string });
+        if (isPayment) setPaymentProof(reader.result as string);
+        else setFormData({ ...formData, attachment: reader.result as string });
       };
       reader.readAsDataURL(file);
     }
@@ -175,6 +163,20 @@ export default function Expenses() {
     } catch (err: any) { alert(err.message); }
   };
 
+  // NOUVELLE FONCTION PAIEMENT
+  const handleConfirmPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await fetchApi(`/api/expenses/${showPayModal}/pay`, {
+        method: 'PATCH',
+        body: JSON.stringify({ payment_proof: paymentProof })
+      });
+      setShowPayModal(null);
+      setPaymentProof('');
+      loadData();
+    } catch (err: any) { alert(err.message); }
+  };
+
   const handleDelete = async (id: number) => {
     if (!confirm('Supprimer cette dépense ?')) return;
     try {
@@ -192,13 +194,11 @@ export default function Expenses() {
   };
 
   const selectedCategory = categories.find(c => c.id.toString() === formData.category_id);
-  const selectedCategoryEdit = categories.find(c => c.id.toString() === editData.category_id);
 
   const getFileIcon = (base64: string) => {
     if (base64.includes('application/pdf')) return <FileText size={14} className="text-red-500" />;
     if (base64.includes('image/')) return <ImageIcon size={14} className="text-blue-500" />;
-    if (base64.includes('zip') || base64.includes('rar')) return <FileArchive size={14} className="text-yellow-600" />;
-    return <FileText size={14} />;
+    return <FileArchive size={14} className="text-yellow-600" />;
   };
 
   return (
@@ -223,15 +223,11 @@ export default function Expenses() {
             {getMonthOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
           </select>
 
-          {/* BOUTON EXCEL */}
-          <button 
-            onClick={handleExportExcel}
-            className="inline-flex items-center px-4 py-2 border-2 border-green-600 text-green-600 rounded-xl shadow-sm text-sm font-black hover:bg-green-50 transition-all uppercase tracking-tighter"
-          >
+          <button onClick={handleExportExcel} className="inline-flex items-center px-4 py-2 border-2 border-green-600 text-green-600 rounded-xl shadow-sm text-sm font-black hover:bg-green-50 transition-all uppercase tracking-tighter">
             <FileSpreadsheet className="mr-1.5 h-4 w-4" /> Export
           </button>
 
-          <button onClick={() => setShowForm(!showForm)} className="inline-flex items-center px-4 py-2 border border-transparent rounded-xl shadow-sm text-sm font-black text-white bg-blue-600 hover:bg-blue-700 transition-all uppercase tracking-tighter">
+          <button onClick={() => setShowForm(!showForm)} className="inline-flex items-center px-4 py-2 rounded-xl text-sm font-black text-white bg-blue-600 hover:bg-blue-700 transition-all uppercase tracking-tighter">
             <Plus className="-ml-1 mr-1 h-4 w-4" /> Nouvelle demande
           </button>
         </div>
@@ -249,6 +245,7 @@ export default function Expenses() {
         </div>
       )}
 
+      {/* TON BANDEAU AVEC LES INFOS (CONSERVÉ) */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-xl">
           <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest">Total Sélection</p>
@@ -260,7 +257,7 @@ export default function Expenses() {
         </div>
         <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-xl">
           <p className="text-[10px] text-green-600 font-black uppercase tracking-widest">Acceptées</p>
-          <p className="text-xl font-black text-green-700">{filteredExpenses.filter(e => e.status === 'approved').length}</p>
+          <p className="text-xl font-black text-green-700">{filteredExpenses.filter(e => e.status === 'approved' || e.status === 'paid').length}</p>
         </div>
         <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-xl">
           <p className="text-[10px] text-red-600 font-black uppercase tracking-widest">Refusées</p>
@@ -300,7 +297,7 @@ export default function Expenses() {
             </div>
             <div className="sm:col-span-2">
               <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Pièce Jointe</label>
-              <input type="file" accept="image/*,.pdf,.zip,.rar" onChange={handleFileChange} className="mt-1 block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+              <input type="file" accept="image/*,.pdf,.zip,.rar" onChange={(e) => handleFileChange(e)} className="mt-1 block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
             </div>
             <div className="sm:col-span-6 flex justify-end space-x-3 border-t pt-6">
               <button type="button" onClick={() => setShowForm(false)} className="py-3 px-6 font-bold text-gray-500 uppercase tracking-widest text-xs">Annuler</button>
@@ -340,7 +337,7 @@ export default function Expenses() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div className="font-black tracking-tighter uppercase">{expense.description || '-'}</div>
-                  <div className="text-[10px] text-gray-400 font-bold uppercase mt-1 flex items-center gap-2">
+                  <div className="text-[10px] text-gray-400 font-bold uppercase mt-1 flex flex-wrap gap-2">
                     {(user?.role === 'admin' || user?.role === 'admin_level_1') && (
                       <span className="text-indigo-600">
                         {expense.user_full_name || expense.user_email} • 
@@ -349,6 +346,11 @@ export default function Expenses() {
                     {expense.attachment && (
                       <button onClick={() => setPreviewFile(expense.attachment)} className="text-blue-600 hover:underline flex items-center gap-1">
                         {getFileIcon(expense.attachment)} Justificatif
+                      </button>
+                    )}
+                    {expense.payment_proof && (
+                      <button onClick={() => setPreviewFile(expense.payment_proof)} className="text-green-600 hover:underline flex items-center gap-1 font-black">
+                        <CreditCard size={12}/> Preuve Paiement
                       </button>
                     )}
                   </div>
@@ -362,15 +364,23 @@ export default function Expenses() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`px-3 py-1 inline-flex text-[9px] leading-5 font-black uppercase rounded-lg ${
+                    expense.status === 'paid' ? 'bg-indigo-100 text-indigo-800' :
                     expense.status === 'approved' ? 'bg-green-100 text-green-800' :
                     expense.status === 'rejected' ? 'bg-red-100 text-red-800' :
                     'bg-yellow-100 text-yellow-800'
                   }`}>
-                    {expense.status === 'approved' ? 'Approuvé' : expense.status === 'rejected' ? 'Rejeté' : 'En attente'}
+                    {expense.status === 'paid' ? 'Payé' : (expense.status === 'approved' ? 'Approuvé' : (expense.status === 'rejected' ? 'Rejeté' : 'En attente'))}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <div className="flex justify-end space-x-2">
+                    {/* BOUTON VIREMENT FAIT */}
+                    {(user?.role === 'admin' || user?.role === 'admin_level_1') && expense.status === 'approved' && (
+                      <button onClick={() => setShowPayModal(expense.id)} className="text-white bg-indigo-600 p-1.5 rounded-lg hover:bg-indigo-700" title="Marquer comme payé">
+                        <CreditCard size={16} />
+                      </button>
+                    )}
+
                     {(user?.role === 'admin' || user?.role === 'admin_level_1') && (
                       <button 
                         onClick={() => {
@@ -446,9 +456,26 @@ export default function Expenses() {
         </div>
       )}
 
+      {/* MODAL VIREMENT EFFECTUÉ */}
+      {showPayModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-2xl font-black mb-2 uppercase tracking-tighter italic">Virement effectué</h3>
+            <p className="text-sm text-gray-500 mb-6 font-bold">Ajoutez une preuve de virement pour valider le paiement final.</p>
+            <form onSubmit={handleConfirmPayment} className="space-y-4">
+              <input type="file" required accept="image/*,.pdf" onChange={(e) => handleFileChange(e, true)} className="w-full border-2 border-dashed rounded-xl p-6 font-bold text-xs" />
+              <div className="flex gap-3 pt-6">
+                <button type="button" onClick={() => setShowPayModal(null)} className="flex-1 py-3 font-bold text-gray-500">Annuler</button>
+                <button type="submit" disabled={!paymentProof} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg disabled:opacity-50">Valider le paiement</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* PRÉVISUALISATION */}
       {previewFile && (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/90 p-4 backdrop-blur-md" onClick={() => setPreviewFile(null)}>
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 p-4 backdrop-blur-md" onClick={() => setPreviewFile(null)}>
           <div className="relative max-w-4xl w-full max-h-full flex flex-col items-center animate-in zoom-in duration-200">
             <button className="absolute -top-12 right-0 text-white hover:text-gray-300 bg-gray-800 p-2 rounded-full" onClick={() => setPreviewFile(null)}><X className="h-6 w-6" /></button>
             <div className="bg-white rounded-3xl p-6 shadow-2xl w-full flex flex-col items-center gap-6" onClick={(e) => e.stopPropagation()}>
