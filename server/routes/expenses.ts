@@ -23,8 +23,6 @@ async function notifyAllAdmins(title: string, message: string) {
 
     const adminList = admins.filter(u => u.role === 'admin' || u.role === 'admin_level_1');
     
-    console.log(`🔍 Tentative d'envoi à ${adminList.length} admins trouvés.`);
-
     if (adminList.length > 0) {
       const notifications = adminList.map(adm => ({
         user_id: adm.id,
@@ -36,12 +34,8 @@ async function notifyAllAdmins(title: string, message: string) {
 
       const { error: insertError } = await supabase.from('notifications').insert(notifications);
       if (insertError) {
-        console.error("❌ Erreur lors de l'insertion des notifications:", insertError.message);
-      } else {
-        console.log("✅ Notifications envoyées avec succès aux admins.");
+        console.error("❌ Erreur lors de l'insertion des notifications admins:", insertError.message);
       }
-    } else {
-      console.log("⚠️ Aucun admin trouvé dans la base avec les rôles 'admin' ou 'admin_level_1'.");
     }
   } catch (err) {
     console.error("❌ Erreur système notification:", err);
@@ -71,12 +65,10 @@ router.get('/', async (req: AuthRequest, res) => {
   const { data: expenses, error } = await query.order('created_at', { ascending: false });
 
   if (error) {
-    console.error("Erreur backend expenses:", error.message);
     return res.status(500).json({ error: error.message });
   }
 
   const formattedExpenses = expenses.map(e => {
-    // Construction sécurisée du nom complet
     const firstName = e.user?.first_name || '';
     const lastName = e.user?.last_name || '';
     const fullName = `${firstName} ${lastName}`.trim();
@@ -86,7 +78,7 @@ router.get('/', async (req: AuthRequest, res) => {
       category_name: e.category?.name,
       sub_category_name: e.sub_category?.name,
       user_email: e.user?.email,
-      user_full_name: fullName || null, // Sera nul si profil non rempli
+      user_full_name: fullName || null,
       approved_by_email: e.approver?.email
     };
   });
@@ -144,7 +136,8 @@ router.patch('/:id/status', async (req: AuthRequest, res) => {
       user_id: expense.user_id,
       title: `Dépense ${etat}`,
       message: `Votre demande de ${expense.amount}€ a été ${etat}.`,
-      type: status === 'approved' ? 'success' : 'error'
+      type: status === 'approved' ? 'success' : 'error',
+      is_read: false
     }]);
 
     await notifyAllAdmins(
@@ -178,10 +171,11 @@ router.delete('/:id', async (req: AuthRequest, res) => {
 
   res.status(404).json({ error: 'Dépense introuvable' });
 });
+
 /**
  * PATCH /:id - Admin modifie une dépense (Montant, Famille, Sous-famille)
  */
-router.patch('/:id', authenticateToken, async (req: AuthRequest, res) => {
+router.patch('/:id', async (req: AuthRequest, res) => {
   if (req.user?.role !== 'admin' && req.user?.role !== 'admin_level_1') {
     return res.status(403).json({ error: 'Action réservée aux admins' });
   }
@@ -206,27 +200,54 @@ router.patch('/:id', authenticateToken, async (req: AuthRequest, res) => {
 });
 
 /**
- * PATCH /:id/pay - Confirmer le paiement avec preuve
+ * PATCH /:id/pay - Confirmer le paiement avec preuve + Notification Employé
  */
-router.patch('/:id/pay', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'admin' && req.user?.role !== 'admin_level_1') {
-    return res.status(403).json({ error: 'Interdit' });
-  }
+router.patch('/:id/pay', async (req: AuthRequest, res) => {
+  const { role, email: adminEmail } = req.user!;
+  if (role !== 'admin' && role !== 'admin_level_1') return res.status(403).json({ error: 'Interdit' });
 
   const { id } = req.params;
   const { payment_proof } = req.body;
 
-  const { data, error } = await supabase
-    .from('expenses')
-    .update({ 
-      status: 'paid', // Nouveau statut
-      payment_proof: payment_proof // Stockage du virement
-    })
-    .eq('id', id)
-    .select()
-    .single();
+  try {
+    // 1. On récupère l'USER_ID et les détails de la dépense
+    const { data: expense, error: fetchErr } = await supabase
+      .from('expenses')
+      .select('user_id, amount, description')
+      .eq('id', id)
+      .single();
 
-  if (error) return res.status(400).json({ error: error.message });
-  res.json(data);
+    if (fetchErr || !expense) return res.status(404).json({ error: "Dépense introuvable" });
+
+    // 2. Mise à jour du statut en 'paid'
+    const { error: updErr } = await supabase
+      .from('expenses')
+      .update({ status: 'paid', payment_proof })
+      .eq('id', id);
+
+    if (updErr) return res.status(400).json({ error: updErr.message });
+
+    // 3. INSERTION NOTIFICATION EMPLOYÉ
+    const { error: notifErr } = await supabase.from('notifications').insert([{
+      user_id: expense.user_id,
+      title: 'Virement effectué 💸',
+      message: `Le virement pour votre dépense de ${expense.amount}€ ("${expense.description || 'sans description'}") a été réalisé.`,
+      type: 'success', 
+      is_read: false
+    }]);
+
+    if (notifErr) {
+      console.error("❌ ERREUR NOTIFICATION SUPABASE:", notifErr.message);
+    }
+
+    // 4. Notifier les autres admins
+    await notifyAllAdmins("✅ Paiement confirmé", `Paiement de ${expense.amount}€ validé par ${adminEmail}.`);
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("❌ ERREUR SYSTÈME:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
+
 export default router;
