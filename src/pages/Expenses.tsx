@@ -3,7 +3,7 @@ import { fetchApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { 
   Plus, Check, X, Filter, Trash2, Edit2, Save, 
-  Search, CheckSquare, Square 
+  Search, CheckSquare, Square, FileText, FileArchive, Image as ImageIcon, Download
 } from 'lucide-react';
 
 const getMonthOptions = () => {
@@ -28,7 +28,7 @@ export default function Expenses() {
   const [filterMonth, setFilterMonth] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<string | null>(null); // Changé de previewImage à previewFile
   const { user } = useAuth();
 
   const [formData, setFormData] = useState({
@@ -95,11 +95,12 @@ export default function Expenses() {
     }
   };
 
+  // --- GESTION DES FICHIERS (PDF, IMAGES, ZIP) ---
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 10 * 1024 * 1024) {
-        alert('Le fichier est trop volumineux (max 10Mo)');
+      if (file.size > 15 * 1024 * 1024) { // Augmenté à 15Mo pour les PDF/Archives
+        alert('Fichier trop lourd (max 15Mo)');
         e.target.value = '';
         return;
       }
@@ -164,6 +165,14 @@ export default function Expenses() {
   const selectedCategory = categories.find(c => c.id.toString() === formData.category_id);
   const selectedCategoryEdit = categories.find(c => c.id.toString() === editData.category_id);
 
+  // Fonction pour détecter le type de fichier et afficher l'icône
+  const getFileIcon = (base64: string) => {
+    if (base64.includes('application/pdf')) return <FileText size={14} className="text-red-500" />;
+    if (base64.includes('image/')) return <ImageIcon size={14} className="text-blue-500" />;
+    if (base64.includes('zip') || base64.includes('rar')) return <FileArchive size={14} className="text-yellow-600" />;
+    return <FileText size={14} />;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
@@ -204,6 +213,7 @@ export default function Expenses() {
         </div>
       )}
 
+      {/* Cartes résumé */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-xl">
           <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest">Total Sélection</p>
@@ -254,8 +264,13 @@ export default function Expenses() {
               <textarea rows={2} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="mt-1 block w-full border-2 border-gray-100 rounded-xl p-3 outline-none focus:border-blue-500 font-bold bg-gray-50" />
             </div>
             <div className="sm:col-span-2">
-              <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Facture</label>
-              <input type="file" onChange={handleFileChange} className="mt-1 block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+              <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Pièce Jointe (Images, PDF, ZIP)</label>
+              <input 
+                type="file" 
+                accept="image/*,.pdf,.zip,.rar"
+                onChange={handleFileChange} 
+                className="mt-1 block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" 
+              />
             </div>
             <div className="sm:col-span-6 flex justify-end space-x-3 border-t pt-6">
               <button type="button" onClick={() => setShowForm(false)} className="py-3 px-6 font-bold text-gray-500 uppercase tracking-widest text-xs">Annuler</button>
@@ -265,7 +280,8 @@ export default function Expenses() {
         </div>
       )}
 
-      <div className="bg-white shadow-sm border border-gray-200 rounded-2xl overflow-hidden">
+      {/* Table des dépenses */}
+      <div className="bg-white shadow-sm border border-gray-200 rounded-2xl overflow-hidden font-bold">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -290,19 +306,21 @@ export default function Expenses() {
                     {selectedIds.includes(expense.id) ? <CheckSquare size={18} /> : <Square size={18} />}
                   </button>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-xs font-bold text-gray-500 uppercase">
+                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 uppercase">
                   {new Date(expense.date).toLocaleDateString()}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div className="font-black tracking-tighter uppercase">{expense.description || '-'}</div>
-                  <div className="text-[10px] text-gray-400 font-bold uppercase mt-1">
+                  <div className="text-[10px] text-gray-400 font-bold uppercase mt-1 flex items-center gap-2">
                     {(user?.role === 'admin' || user?.role === 'admin_level_1') && (
                       <span className="text-indigo-600">
                         {expense.user_full_name || expense.user_email} • 
                       </span>
                     )}
                     {expense.attachment && (
-                      <button onClick={() => setPreviewImage(expense.attachment)} className="text-blue-600 hover:underline ml-1">Facture</button>
+                      <button onClick={() => setPreviewFile(expense.attachment)} className="text-blue-600 hover:underline flex items-center gap-1">
+                        {getFileIcon(expense.attachment)} Justificatif
+                      </button>
                     )}
                   </div>
                 </td>
@@ -324,7 +342,6 @@ export default function Expenses() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <div className="flex justify-end space-x-2">
-                    {/* BOUTON ÉDITION */}
                     {(user?.role === 'admin' || user?.role === 'admin_level_1') && (
                       <button 
                         onClick={() => {
@@ -342,8 +359,6 @@ export default function Expenses() {
                         <Edit2 size={16} />
                       </button>
                     )}
-
-                    {/* BOUTONS APPROBATION / REJET */}
                     {(user?.role === 'admin' || user?.role === 'admin_level_1') && expense.status === 'pending' && (
                       <>
                         <button onClick={() => handleStatusUpdate(expense.id, 'approved')} className="text-green-600 bg-green-50 p-1.5 rounded-lg hover:bg-green-100 transition-colors" title="Approuver">
@@ -354,8 +369,6 @@ export default function Expenses() {
                         </button>
                       </>
                     )}
-
-                    {/* BOUTON SUPPRESSION */}
                     <button onClick={() => handleDelete(expense.id)} className="text-gray-300 hover:text-red-600 p-1.5 transition-colors">
                       <Trash2 size={16} />
                     </button>
@@ -367,7 +380,7 @@ export default function Expenses() {
         </table>
       </div>
 
-      {/* MODAL ÉDITION ADMIN */}
+      {/* MODAL EDITION ADMIN */}
       {showEditModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[110] p-4">
           <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
@@ -375,7 +388,7 @@ export default function Expenses() {
             <form onSubmit={handleEditSubmit} className="space-y-4">
               <div>
                 <label className="text-xs font-black text-gray-400 uppercase ml-2 tracking-widest">Montant (€)</label>
-                <input type="number" step="0.01" value={editData.amount} required className="w-full border-2 border-gray-100 rounded-xl p-3 outline-none font-bold focus:border-blue-500 bg-gray-50" 
+                <input type="number" step="0.01" value={editData.amount} required className="w-full border-2 border-gray-100 rounded-xl p-3 outline-none font-bold focus:border-indigo-500 bg-gray-50" 
                   onChange={(e) => setEditData({...editData, amount: e.target.value})} />
               </div>
               <div>
@@ -404,11 +417,30 @@ export default function Expenses() {
         </div>
       )}
 
-      {previewImage && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black bg-opacity-80 p-4 backdrop-blur-sm" onClick={() => setPreviewImage(null)}>
+      {/* MODAL DE PRÉVISUALISATION ET TÉLÉCHARGEMENT */}
+      {previewFile && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/90 p-4 backdrop-blur-md" onClick={() => setPreviewFile(null)}>
           <div className="relative max-w-4xl w-full max-h-full flex flex-col items-center animate-in zoom-in duration-200">
-            <button className="absolute -top-12 right-0 text-white hover:text-gray-300 bg-gray-800 p-2 rounded-full" onClick={() => setPreviewImage(null)}><X className="h-6 w-6" /></button>
-            <img src={previewImage} alt="Preview" className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border-4 border-white" onClick={(e) => e.stopPropagation()} />
+            <button className="absolute -top-12 right-0 text-white hover:text-gray-300 bg-gray-800 p-2 rounded-full" onClick={() => setPreviewFile(null)}><X className="h-6 w-6" /></button>
+            
+            <div className="bg-white rounded-3xl p-6 shadow-2xl w-full flex flex-col items-center gap-6" onClick={(e) => e.stopPropagation()}>
+              {previewFile.includes('image/') ? (
+                <img src={previewFile} alt="Preview" className="max-w-full max-h-[70vh] object-contain rounded-xl border border-gray-100" />
+              ) : (
+                <div className="py-20 flex flex-col items-center gap-4">
+                  {previewFile.includes('pdf') ? <FileText size={80} className="text-red-500" /> : <FileArchive size={80} className="text-yellow-600" />}
+                  <p className="font-black text-gray-800 uppercase">Document justificatif ({previewFile.includes('pdf') ? 'PDF' : 'Archive'})</p>
+                </div>
+              )}
+              
+              <a 
+                href={previewFile} 
+                download={`justificatif-${Date.now()}`}
+                className="bg-blue-600 text-white px-10 py-4 rounded-2xl font-black flex items-center gap-3 hover:bg-blue-700 shadow-xl transition-all uppercase tracking-widest text-sm"
+              >
+                <Download size={20} /> Télécharger le document
+              </a>
+            </div>
           </div>
         </div>
       )}
