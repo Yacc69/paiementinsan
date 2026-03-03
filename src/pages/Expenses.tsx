@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../api';
 import { useAuth } from '../context/AuthContext';
+import * as XLSX from 'xlsx'; // IMPORTATION XLSX
 import { 
   Plus, Check, X, Filter, Trash2, Edit2, Save, 
-  Search, CheckSquare, Square, FileText, FileArchive, Image as ImageIcon, Download
+  Search, CheckSquare, Square, FileText, FileArchive, Image as ImageIcon, Download, FileSpreadsheet
 } from 'lucide-react';
 
 const getMonthOptions = () => {
@@ -26,9 +27,9 @@ export default function Expenses() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [filterCategory, setFilterCategory] = useState('');
   const [filterMonth, setFilterMonth] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [previewFile, setPreviewFile] = useState<string | null>(null); // Changé de previewImage à previewFile
+  const [searchQuery, setSearchQuery] = useState(''); 
+  const [selectedIds, setSelectedIds] = useState<number[]>([]); 
+  const [previewFile, setPreviewFile] = useState<string | null>(null);
   const { user } = useAuth();
 
   const [formData, setFormData] = useState({
@@ -81,6 +82,35 @@ export default function Expenses() {
 
   const totalFiltered = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
 
+  // --- LOGIQUE EXPORT EXCEL ---
+  const handleExportExcel = () => {
+    // 1. Préparation des données proprement nommées
+    const dataToExport = filteredExpenses.map(e => ({
+      'DATE': new Date(e.date).toLocaleDateString('fr-FR'),
+      'COLLABORATEUR': e.user_full_name || e.user_email,
+      'DESCRIPTION': e.description || '-',
+      'FAMILLE': e.category_name,
+      'SOUS-FAMILLE': e.sub_category_name || 'Général',
+      'MONTANT (€)': e.amount,
+      'STATUT': e.status === 'approved' ? 'Approuvé' : e.status === 'rejected' ? 'Rejeté' : 'En attente'
+    }));
+
+    // 2. Création du classeur
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Dépenses");
+
+    // 3. Ajustement auto des colonnes
+    const wscols = [
+      { wch: 12 }, { wch: 25 }, { wch: 40 }, { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 15 }
+    ];
+    worksheet['!cols'] = wscols;
+
+    // 4. Téléchargement du fichier
+    const fileName = `Export_FinManage_${filterMonth || 'Total'}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  };
+
   const toggleSelect = (id: number) => {
     setSelectedIds(prev => 
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
@@ -95,11 +125,10 @@ export default function Expenses() {
     }
   };
 
-  // --- GESTION DES FICHIERS (PDF, IMAGES, ZIP) ---
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 15 * 1024 * 1024) { // Augmenté à 15Mo pour les PDF/Archives
+      if (file.size > 15 * 1024 * 1024) {
         alert('Fichier trop lourd (max 15Mo)');
         e.target.value = '';
         return;
@@ -165,7 +194,6 @@ export default function Expenses() {
   const selectedCategory = categories.find(c => c.id.toString() === formData.category_id);
   const selectedCategoryEdit = categories.find(c => c.id.toString() === editData.category_id);
 
-  // Fonction pour détecter le type de fichier et afficher l'icône
   const getFileIcon = (base64: string) => {
     if (base64.includes('application/pdf')) return <FileText size={14} className="text-red-500" />;
     if (base64.includes('image/')) return <ImageIcon size={14} className="text-blue-500" />;
@@ -176,7 +204,7 @@ export default function Expenses() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-        <h2 className="text-2xl font-bold text-gray-900 tracking-tight italic uppercase">Gestion des Dépenses</h2>
+        <h2 className="text-2xl font-black text-gray-900 tracking-tight italic uppercase">Gestion des Dépenses</h2>
         
         <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
           <div className="relative flex-1 lg:w-64">
@@ -194,6 +222,14 @@ export default function Expenses() {
             <option value="">Tous les mois</option>
             {getMonthOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
           </select>
+
+          {/* BOUTON EXCEL */}
+          <button 
+            onClick={handleExportExcel}
+            className="inline-flex items-center px-4 py-2 border-2 border-green-600 text-green-600 rounded-xl shadow-sm text-sm font-black hover:bg-green-50 transition-all uppercase tracking-tighter"
+          >
+            <FileSpreadsheet className="mr-1.5 h-4 w-4" /> Export
+          </button>
 
           <button onClick={() => setShowForm(!showForm)} className="inline-flex items-center px-4 py-2 border border-transparent rounded-xl shadow-sm text-sm font-black text-white bg-blue-600 hover:bg-blue-700 transition-all uppercase tracking-tighter">
             <Plus className="-ml-1 mr-1 h-4 w-4" /> Nouvelle demande
@@ -213,7 +249,6 @@ export default function Expenses() {
         </div>
       )}
 
-      {/* Cartes résumé */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-xl">
           <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest">Total Sélection</p>
@@ -264,13 +299,8 @@ export default function Expenses() {
               <textarea rows={2} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="mt-1 block w-full border-2 border-gray-100 rounded-xl p-3 outline-none focus:border-blue-500 font-bold bg-gray-50" />
             </div>
             <div className="sm:col-span-2">
-              <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Pièce Jointe (Images, PDF, ZIP)</label>
-              <input 
-                type="file" 
-                accept="image/*,.pdf,.zip,.rar"
-                onChange={handleFileChange} 
-                className="mt-1 block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" 
-              />
+              <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Pièce Jointe</label>
+              <input type="file" accept="image/*,.pdf,.zip,.rar" onChange={handleFileChange} className="mt-1 block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
             </div>
             <div className="sm:col-span-6 flex justify-end space-x-3 border-t pt-6">
               <button type="button" onClick={() => setShowForm(false)} className="py-3 px-6 font-bold text-gray-500 uppercase tracking-widest text-xs">Annuler</button>
@@ -280,7 +310,6 @@ export default function Expenses() {
         </div>
       )}
 
-      {/* Table des dépenses */}
       <div className="bg-white shadow-sm border border-gray-200 rounded-2xl overflow-hidden font-bold">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -306,7 +335,7 @@ export default function Expenses() {
                     {selectedIds.includes(expense.id) ? <CheckSquare size={18} /> : <Square size={18} />}
                   </button>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 uppercase">
+                <td className="px-6 py-4 whitespace-nowrap text-xs font-bold text-gray-500 uppercase">
                   {new Date(expense.date).toLocaleDateString()}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -417,28 +446,22 @@ export default function Expenses() {
         </div>
       )}
 
-      {/* MODAL DE PRÉVISUALISATION ET TÉLÉCHARGEMENT */}
+      {/* PRÉVISUALISATION */}
       {previewFile && (
         <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/90 p-4 backdrop-blur-md" onClick={() => setPreviewFile(null)}>
           <div className="relative max-w-4xl w-full max-h-full flex flex-col items-center animate-in zoom-in duration-200">
             <button className="absolute -top-12 right-0 text-white hover:text-gray-300 bg-gray-800 p-2 rounded-full" onClick={() => setPreviewFile(null)}><X className="h-6 w-6" /></button>
-            
             <div className="bg-white rounded-3xl p-6 shadow-2xl w-full flex flex-col items-center gap-6" onClick={(e) => e.stopPropagation()}>
               {previewFile.includes('image/') ? (
-                <img src={previewFile} alt="Preview" className="max-w-full max-h-[70vh] object-contain rounded-xl border border-gray-100" />
+                <img src={previewFile} alt="Preview" className="max-w-full max-h-[70vh] object-contain rounded-xl" />
               ) : (
                 <div className="py-20 flex flex-col items-center gap-4">
                   {previewFile.includes('pdf') ? <FileText size={80} className="text-red-500" /> : <FileArchive size={80} className="text-yellow-600" />}
-                  <p className="font-black text-gray-800 uppercase">Document justificatif ({previewFile.includes('pdf') ? 'PDF' : 'Archive'})</p>
+                  <p className="font-black text-gray-800 uppercase italic">Document justificatif</p>
                 </div>
               )}
-              
-              <a 
-                href={previewFile} 
-                download={`justificatif-${Date.now()}`}
-                className="bg-blue-600 text-white px-10 py-4 rounded-2xl font-black flex items-center gap-3 hover:bg-blue-700 shadow-xl transition-all uppercase tracking-widest text-sm"
-              >
-                <Download size={20} /> Télécharger le document
+              <a href={previewFile} download={`justificatif-${Date.now()}`} className="bg-blue-600 text-white px-10 py-4 rounded-2xl font-black flex items-center gap-3 hover:bg-blue-700 shadow-xl transition-all uppercase tracking-widest text-sm">
+                <Download size={20} /> Télécharger
               </a>
             </div>
           </div>
