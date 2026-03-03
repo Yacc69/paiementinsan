@@ -6,24 +6,16 @@ const router = express.Router();
 
 /**
  * POST /login
- * Authentifie l'utilisateur et récupère son profil public
  */
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
-
   try {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error || !data.user) {
-      return res.status(401).json({ error: 'Identifiants invalides' });
-    }
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error || !data.user) return res.status(401).json({ error: 'Identifiants invalides' });
 
     const { data: profile, error: profileError } = await supabase
       .from('users')
-      .select('role')
+      .select('role, first_name, last_name')
       .eq('id', data.user.id)
       .single();
 
@@ -34,7 +26,9 @@ router.post('/login', async (req, res) => {
       user: { 
         id: data.user.id, 
         email: data.user.email, 
-        role: profile?.role || 'requester' 
+        role: profile?.role || 'requester',
+        first_name: profile?.first_name,
+        last_name: profile?.last_name
       } 
     });
   } catch (err: any) {
@@ -43,153 +37,90 @@ router.post('/login', async (req, res) => {
 });
 
 /**
- * POST /register
- * Création d'un utilisateur par un Admin (Utilise l'API Admin de Supabase)
- * Bypass la confirmation par email pour une création immédiate.
+ * POST /register - Création avec Nom et Prénom
  */
 router.post('/register', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'admin') {
-    return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
-  }
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Accès réservé' });
 
-  const { email, password, role } = req.body;
+  const { email, password, role, first_name, last_name } = req.body;
 
   try {
-    // 1. Création forcée via supabaseAdmin (évite l'envoi de mail de confirmation)
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      email_confirm: true, // Confirme le compte immédiatement
-      user_metadata: { role: role || 'requester' }
+      email_confirm: true,
+      user_metadata: { role: role || 'requester', first_name, last_name }
     });
 
     if (authError) throw authError;
 
-    // 2. Insertion dans la table public.users
     if (authData.user) {
       const { error: dbError } = await supabase
         .from('users')
         .insert([{ 
           id: authData.user.id, 
           email, 
-          role: role || 'requester' 
+          role: role || 'requester',
+          first_name,
+          last_name 
         }]);
       
       if (dbError) {
-        // Nettoyage si la base publique échoue
         await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
         throw dbError;
       }
     }
-
     res.status(201).json({ message: 'Utilisateur créé avec succès' });
   } catch (error: any) {
-    console.error("Erreur creation:", error.message);
     res.status(400).json({ error: error.message });
   }
 });
 
 /**
- * GET /users
- * Liste complète des utilisateurs pour l'Admin
+ * GET /users - Liste complète
  */
 router.get('/users', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'admin' && req.user?.role !== 'admin_level_1') {
-    return res.status(403).json({ error: 'Accès interdit' });
-  }
-
-  const { data: users, error } = await supabase
-    .from('users')
-    .select('id, email, role, created_at')
-    .order('created_at', { ascending: false });
-
+  if (req.user?.role !== 'admin' && req.user?.role !== 'admin_level_1') return res.status(403).json({ error: 'Accès interdit' });
+  const { data: users, error } = await supabase.from('users').select('*').order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
   res.json(users);
 });
 
 /**
- * PATCH /users/:id
- * Met à jour le rôle d'un utilisateur
+ * PATCH /users/:id - Modifier rôle
  */
 router.patch('/users/:id', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'admin') {
-    return res.status(403).json({ error: 'Action non autorisée' });
-  }
-
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Interdit' });
   const { role } = req.body;
-  const { id } = req.params;
-
-  const { error } = await supabase
-    .from('users')
-    .update({ role })
-    .eq('id', id);
-
+  const { error } = await supabase.from('users').update({ role }).eq('id', req.params.id);
   if (error) return res.status(400).json({ error: error.message });
   res.json({ message: 'Rôle mis à jour' });
 });
 
 /**
- * DELETE /users/:id
- * Supprime un utilisateur proprement (Auth + Table Publique)
+ * DELETE /users/:id - Supprimer proprement
  */
 router.delete('/users/:id', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'admin') {
-    return res.status(403).json({ error: 'Action non autorisée' });
-  }
-
-  const { id } = req.params;
-
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Interdit' });
   try {
-    // 1. Suppression du compte Auth (via Admin API)
-    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
-    if (authError) throw authError;
-
-    // 2. Suppression dans la table publique (si pas de cascade configurée)
-    const { error: dbError } = await supabase
-      .from('users')
-      .delete()
-      .eq('id', id);
-
-    if (dbError) throw dbError;
-
-    res.json({ message: 'Utilisateur supprimé avec succès' });
+    await supabaseAdmin.auth.admin.deleteUser(req.params.id);
+    await supabase.from('users').delete().eq('id', req.params.id);
+    res.json({ message: 'Supprimé avec succès' });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
   }
 });
 
-/**
- * GET /me
- */
-router.get('/me', authenticateToken, (req: AuthRequest, res) => {
-  res.json({ user: req.user });
+router.get('/me', authenticateToken, (req: AuthRequest, res) => res.json({ user: req.user }));
+router.post('/logout', async (req, res) => {
+  await supabase.auth.signOut();
+  res.json({ message: 'Déconnexion' });
 });
 
-/**
- * POST /logout
- */
-router.post('/logout', async (req, res) => {
-  const { error } = await supabase.auth.signOut();
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ message: 'Déconnexion réussie' });
-});
-/**
- * PATCH /update-profile - Modifier ses informations personnelles
- */
 router.patch('/update-profile', authenticateToken, async (req: AuthRequest, res) => {
   const { first_name, last_name } = req.body;
-  const userId = req.user!.id;
-
-  const { data, error } = await supabase
-    .from('users')
-    .update({ first_name, last_name })
-    .eq('id', userId)
-    .select()
-    .single();
-
+  const { data, error } = await supabase.from('users').update({ first_name, last_name }).eq('id', req.user!.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
-
-  // On renvoie les données mises à jour pour que le frontend rafraîchisse le contexte
   res.json(data);
 });
 
