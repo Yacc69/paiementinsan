@@ -85,5 +85,29 @@ router.post('/sub', requireAdmin, async (req: AuthRequest, res) => {
 
   res.status(201).json(data);
 });
+/**
+ * DELETE /:id - Supprimer une Famille
+ */
+router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Interdit' });
+  const { id } = req.params;
 
+  const { error } = await supabase.from('categories').delete().eq('id', id);
+  if (error) return res.status(400).json({ error: "Impossible de supprimer : vérifiez que la famille est vide." });
+
+  res.json({ success: true });
+});
+
+/**
+ * DELETE /sub/:id - Supprimer une Sous-Famille
+ */
+router.delete('/sub/:id', authenticateToken, async (req: AuthRequest, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Interdit' });
+  const { id } = req.params;
+
+  const { error } = await supabase.from('sub_categories').delete().eq('id', id);
+  if (error) return res.status(400).json({ error: "Erreur lors de la suppression." });
+
+  res.json({ success: true });
+});
 export default router;

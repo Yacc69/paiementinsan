@@ -49,7 +49,6 @@ export default function Admin() {
     } catch (err: any) { alert(err.message); }
   };
 
-  // --- NOUVELLE ACTION : MODIFIER PROFIL ---
   const handleUpdateUserProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -87,6 +86,15 @@ export default function Admin() {
     } catch (err: any) { alert(err.message); }
   };
 
+  // NOUVELLE FONCTION : SUPPRIMER FAMILLE
+  const handleDeleteCategory = async (id: string) => {
+    if (!confirm("Supprimer cette famille ? Assurez-vous qu'elle soit vide.")) return;
+    try {
+      await fetchApi(`/api/categories/${id}`, { method: 'DELETE' });
+      loadData();
+    } catch (err: any) { alert("Erreur : La famille contient probablement des sous-familles ou des dépenses."); }
+  };
+
   const handleAddSubCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -97,7 +105,16 @@ export default function Admin() {
     } catch (err: any) { alert(err.message); }
   };
 
-  if (loading) return <div className="p-10 text-center font-bold">Chargement...</div>;
+  // NOUVELLE FONCTION : SUPPRIMER SOUS-FAMILLE
+  const handleDeleteSubCategory = async (id: string) => {
+    if (!confirm("Supprimer cette sous-famille ?")) return;
+    try {
+      await fetchApi(`/api/categories/sub/${id}`, { method: 'DELETE' });
+      loadData();
+    } catch (err: any) { alert(err.message); }
+  };
+
+  if (loading) return <div className="p-10 text-center font-bold">Chargement de l'administration...</div>;
 
   return (
     <div className="space-y-6 pb-20">
@@ -114,7 +131,7 @@ export default function Admin() {
             </button>
           )}
           <button onClick={() => setActiveTab('categories')} className={`flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'categories' ? 'bg-white shadow text-indigo-600' : 'text-gray-500'}`}>
-            <Layers size={18} /> Familles
+            <Layers size={18} /> Familles & Sous-familles
           </button>
         </div>
       </div>
@@ -143,7 +160,7 @@ export default function Admin() {
                         {u.first_name?.[0] || '?'}{u.last_name?.[0] || ''}
                       </div>
                       <div>
-                        <div className="font-black text-gray-900 text-sm">{u.first_name} {u.last_name}</div>
+                        <div className="font-black text-gray-900 text-sm uppercase tracking-tighter">{u.first_name} {u.last_name}</div>
                         <div className="text-xs text-gray-400 flex items-center gap-1 font-medium"><Mail size={10}/> {u.email}</div>
                       </div>
                     </div>
@@ -161,15 +178,8 @@ export default function Admin() {
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
-                      <button 
-                        onClick={() => { setEditUser({id: u.id, first_name: u.first_name || '', last_name: u.last_name || ''}); setShowEditModal(true); }}
-                        className="text-gray-400 hover:text-indigo-600 p-2 rounded-lg hover:bg-indigo-50 transition-colors"
-                      >
-                        <Edit2 size={18}/>
-                      </button>
-                      <button onClick={() => handleDeleteUser(u.id)} className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 transition-colors">
-                        <Trash2 size={18}/>
-                      </button>
+                      <button onClick={() => { setEditUser({id: u.id, first_name: u.first_name || '', last_name: u.last_name || ''}); setShowEditModal(true); }} className="text-gray-400 hover:text-indigo-600 p-2 rounded-lg hover:bg-indigo-50 transition-colors"><Edit2 size={18}/></button>
+                      <button onClick={() => handleDeleteUser(u.id)} className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 transition-colors"><Trash2 size={18}/></button>
                     </div>
                   </td>
                 </tr>
@@ -179,29 +189,33 @@ export default function Admin() {
         </div>
       )}
 
-      {/* Reste de l'onglet catégories (Inchangé pour ne pas détériorer) */}
       {activeTab === 'categories' && (
-        <div className="space-y-4">
+        <div className="space-y-4 animate-in fade-in duration-300">
           <div className="flex justify-end gap-3 mb-4">
-            <button onClick={() => setShowCatModal(true)} className="bg-white border-2 border-indigo-600 text-indigo-600 px-5 py-2 rounded-xl font-bold hover:bg-indigo-50">Nouvelle Famille</button>
-            <button onClick={() => setShowSubCatModal(true)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg">Nouvelle Sous-Famille</button>
+            <button onClick={() => setShowCatModal(true)} className="bg-white border-2 border-indigo-600 text-indigo-600 px-5 py-2 rounded-xl font-bold hover:bg-indigo-50 transition-all">Nouvelle Famille</button>
+            <button onClick={() => setShowSubCatModal(true)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-indigo-700 shadow-lg transition-all">Nouvelle Sous-Famille</button>
           </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {categories.map((cat) => (
               <div key={cat.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
                 <div className="flex justify-between items-center mb-4">
                   <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600"><Layers size={20}/></div>
-                  <button className="text-gray-300 hover:text-red-500"><Trash2 size={16}/></button>
+                  <button onClick={() => handleDeleteCategory(cat.id)} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
                 </div>
                 <h4 className="text-lg font-black text-gray-800 mb-3">{cat.name}</h4>
                 <div className="space-y-2">
                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Sous-familles :</p>
-                  {cat.sub_categories?.map((sub: any) => (
-                    <div key={sub.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-xs font-bold text-gray-600 group">
-                      <span className="flex items-center gap-2"><ChevronRight size={14} className="text-indigo-400" /> {sub.name}</span>
-                      <button className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"><X size={14}/></button>
-                    </div>
-                  ))}
+                  {cat.sub_categories && cat.sub_categories.length > 0 ? (
+                    cat.sub_categories.map((sub: any) => (
+                      <div key={sub.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-xs font-bold text-gray-600 group">
+                        <span className="flex items-center gap-2"><ChevronRight size={14} className="text-indigo-400" /> {sub.name}</span>
+                        <button onClick={() => handleDeleteSubCategory(sub.id)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><X size={14}/></button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs italic text-gray-400">Aucune sous-famille créée</p>
+                  )}
                 </div>
               </div>
             ))}
@@ -209,11 +223,11 @@ export default function Admin() {
         </div>
       )}
 
-      {/* Modal : Ajouter Membre */}
+      {/* --- MODALS --- */}
       {showUserModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
           <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
-            <h3 className="text-2xl font-black mb-6 italic">Ajouter un membre</h3>
+            <h3 className="text-2xl font-black mb-6 italic tracking-tighter uppercase">Ajouter un membre</h3>
             <form onSubmit={handleAddUser} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <input type="text" placeholder="Prénom" required className="border-2 rounded-xl p-3 outline-none font-bold focus:border-indigo-500" 
@@ -240,27 +254,26 @@ export default function Admin() {
         </div>
       )}
 
-      {/* --- NOUVEAU MODAL : MODIFIER MEMBRE --- */}
       {showEditModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
           <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
-            <h3 className="text-2xl font-black mb-6 italic">Éditer le profil</h3>
+            <h3 className="text-2xl font-black mb-6 italic tracking-tighter uppercase">Éditer le profil</h3>
             <form onSubmit={handleUpdateUserProfile} className="space-y-4">
               <div className="space-y-4">
                 <div>
-                  <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Prénom</label>
+                  <label className="text-[10px] font-black text-gray-400 uppercase ml-2 tracking-widest">Prénom</label>
                   <input type="text" value={editUser.first_name} required className="w-full border-2 rounded-xl p-3 outline-none font-bold focus:border-indigo-500" 
                     onChange={(e) => setEditUser({...editUser, first_name: e.target.value})} />
                 </div>
                 <div>
-                  <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Nom</label>
+                  <label className="text-[10px] font-black text-gray-400 uppercase ml-2 tracking-widest">Nom</label>
                   <input type="text" value={editUser.last_name} required className="w-full border-2 rounded-xl p-3 outline-none font-bold focus:border-indigo-500" 
                     onChange={(e) => setEditUser({...editUser, last_name: e.target.value})} />
                 </div>
               </div>
               <div className="flex gap-3 pt-6">
                 <button type="button" onClick={() => setShowEditModal(false)} className="flex-1 py-3 font-bold text-gray-500">Annuler</button>
-                <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg flex items-center justify-center gap-2">
+                <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg flex items-center justify-center gap-2 uppercase tracking-tighter">
                   <Save size={18}/> Enregistrer
                 </button>
               </div>
@@ -269,17 +282,37 @@ export default function Admin() {
         </div>
       )}
 
-      {/* Modals Catégories (Inchangés) */}
       {showCatModal && (
-        <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-50 p-4">
-          <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl">
-            <h3 className="text-2xl font-black mb-6">Nouvelle Famille</h3>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-2xl font-black mb-6 italic tracking-tighter uppercase">Nouvelle Famille</h3>
             <form onSubmit={handleAddCategory} className="space-y-4">
-              <input type="text" placeholder="Nom..." required className="w-full border-2 rounded-xl p-3 outline-none font-bold focus:border-indigo-500" 
+              <input type="text" placeholder="Ex: Marketing, Logistique..." required className="w-full border-2 rounded-xl p-3 outline-none focus:border-indigo-500 font-bold" 
                 onChange={(e) => setNewCat({ name: e.target.value })} />
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setShowCatModal(false)} className="flex-1 py-3 font-bold">Annuler</button>
-                <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black">Créer</button>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowCatModal(false)} className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors">Annuler</button>
+                <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg">Créer</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showSubCatModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-2xl font-black mb-6 italic tracking-tighter uppercase">Nouvelle Sous-Famille</h3>
+            <form onSubmit={handleAddSubCategory} className="space-y-4">
+              <select required className="w-full border-2 rounded-xl p-3 font-bold bg-white outline-none focus:border-indigo-500" 
+                onChange={(e) => setNewSubCat({...newSubCat, category_id: e.target.value})}>
+                <option value="">Sélectionner la famille parente</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <input type="text" placeholder="Ex: Publicité, Essence..." required className="w-full border-2 rounded-xl p-3 outline-none focus:border-indigo-500 font-bold" 
+                onChange={(e) => setNewSubCat({ ...newSubCat, name: e.target.value })} />
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowSubCatModal(false)} className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors">Annuler</button>
+                <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg">Créer</button>
               </div>
             </form>
           </div>

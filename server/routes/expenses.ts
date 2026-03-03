@@ -178,5 +178,30 @@ router.delete('/:id', async (req: AuthRequest, res) => {
 
   res.status(404).json({ error: 'Dépense introuvable' });
 });
+/**
+ * PATCH /:id - Admin modifie une dépense (Montant, Famille, Sous-famille)
+ */
+router.patch('/:id', authenticateToken, async (req: AuthRequest, res) => {
+  if (req.user?.role !== 'admin' && req.user?.role !== 'admin_level_1') {
+    return res.status(403).json({ error: 'Action réservée aux admins' });
+  }
 
+  const { id } = req.params;
+  const { amount, category_id, sub_category_id, description } = req.body;
+
+  const { data, error } = await supabase
+    .from('expenses')
+    .update({ 
+      amount: Number(amount), 
+      category_id, 
+      sub_category_id: sub_category_id || null,
+      description 
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
 export default router;

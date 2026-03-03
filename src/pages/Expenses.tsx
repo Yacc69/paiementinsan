@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../api';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Check, X, Filter, Trash2 } from 'lucide-react';
+import { Plus, Check, X, Filter, Trash2, Edit2, Save } from 'lucide-react';
 
 const getMonthOptions = () => {
   const options = [];
@@ -20,6 +20,7 @@ export default function Expenses() {
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [filterCategory, setFilterCategory] = useState('');
   const [filterMonth, setFilterMonth] = useState('');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -32,6 +33,15 @@ export default function Expenses() {
     description: '',
     date: new Date().toISOString().split('T')[0],
     attachment: ''
+  });
+
+  // État pour l'édition Admin
+  const [editData, setEditData] = useState({
+    id: '',
+    amount: '',
+    category_id: '',
+    sub_category_id: '',
+    description: ''
   });
 
   const loadData = async () => {
@@ -50,9 +60,7 @@ export default function Expenses() {
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
   const filteredExpenses = expenses.filter(e => {
     const matchesCategory = !filterCategory || e.category_id.toString() === filterCategory;
@@ -97,9 +105,23 @@ export default function Expenses() {
       setShowForm(false);
       setFormData({ category_id: '', sub_category_id: '', amount: '', description: '', date: new Date().toISOString().split('T')[0], attachment: '' });
       loadData();
-    } catch (err: any) {
-      alert(err.message);
-    }
+    } catch (err: any) { alert(err.message); }
+  };
+
+  // NOUVELLE FONCTION : SOUMISSION ÉDITION ADMIN
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await fetchApi(`/api/expenses/${editData.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          ...editData,
+          amount: parseFloat(editData.amount)
+        })
+      });
+      setShowEditModal(false);
+      loadData();
+    } catch (err: any) { alert(err.message); }
   };
 
   const handleStatusUpdate = async (id: number, status: 'approved' | 'rejected') => {
@@ -109,56 +131,35 @@ export default function Expenses() {
         body: JSON.stringify({ status })
       });
       loadData();
-    } catch (err: any) {
-      alert(err.message);
-    }
+    } catch (err: any) { alert(err.message); }
   };
 
   const handleDelete = async (id: number) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer cette dépense ?')) return;
     try {
-      await fetchApi(`/api/expenses/${id}`, {
-        method: 'DELETE'
-      });
+      await fetchApi(`/api/expenses/${id}`, { method: 'DELETE' });
       loadData();
-    } catch (err: any) {
-      alert(err.message);
-    }
+    } catch (err: any) { alert(err.message); }
   };
 
   const selectedCategory = categories.find(c => c.id.toString() === formData.category_id);
+  const selectedCategoryEdit = categories.find(c => c.id.toString() === editData.category_id);
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-900">Gestion des Dépenses</h2>
+        <h2 className="text-2xl font-bold text-gray-900 tracking-tight italic">Gestion des Dépenses</h2>
         <div className="flex space-x-3">
-          <select
-            value={filterMonth}
-            onChange={(e) => setFilterMonth(e.target.value)}
-            className="block border-gray-300 rounded-md shadow-sm p-2 text-sm border bg-white outline-none"
-          >
+          <select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} className="block border-gray-300 rounded-md shadow-sm p-2 text-sm border bg-white outline-none">
             <option value="">Tous les mois</option>
-            {getMonthOptions().map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
+            {getMonthOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
           </select>
-          <select
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-            className="block pl-3 pr-10 py-2 text-base border-gray-300 sm:text-sm rounded-md border outline-none"
-          >
+          <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="block pl-3 pr-10 py-2 text-base border-gray-300 sm:text-sm rounded-md border outline-none">
             <option value="">Toutes les familles</option>
-            {categories.map((cat) => (
-              <option key={cat.id} value={cat.id}>{cat.name}</option>
-            ))}
+            {categories.map((cat) => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
           </select>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
-          >
-            <Plus className="-ml-1 mr-2 h-5 w-5" />
-            Nouvelle demande
+          <button onClick={() => setShowForm(!showForm)} className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors">
+            <Plus className="-ml-1 mr-2 h-5 w-5" /> Nouvelle demande
           </button>
         </div>
       </div>
@@ -166,112 +167,59 @@ export default function Expenses() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
           <p className="text-xs text-blue-500 font-bold uppercase tracking-wider">Total Sélection</p>
-          <p className="text-xl font-bold text-blue-700">{totalFiltered.toLocaleString()} €</p>
+          <p className="text-xl font-bold text-blue-700 tracking-tighter">{totalFiltered.toLocaleString()} €</p>
         </div>
         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
           <p className="text-xs text-yellow-600 font-bold uppercase tracking-wider">En cours</p>
-          <p className="text-xl font-bold text-yellow-700">{statusCounts.pending}</p>
+          <p className="text-xl font-bold text-yellow-700 tracking-tighter">{statusCounts.pending}</p>
         </div>
         <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg">
           <p className="text-xs text-green-600 font-bold uppercase tracking-wider">Acceptées</p>
-          <p className="text-xl font-bold text-green-700">{statusCounts.approved}</p>
+          <p className="text-xl font-bold text-green-700 tracking-tighter">{statusCounts.approved}</p>
         </div>
         <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg">
           <p className="text-xs text-red-600 font-bold uppercase tracking-wider">Refusées</p>
-          <p className="text-xl font-bold text-red-700">{statusCounts.rejected}</p>
+          <p className="text-xl font-bold text-red-700 tracking-tighter">{statusCounts.rejected}</p>
         </div>
       </div>
 
       {showForm && (
         <div className="bg-white shadow-xl rounded-2xl p-6 border border-gray-100 animate-in fade-in zoom-in duration-200">
-          <h3 className="text-lg font-bold text-gray-900 mb-6">Demande de paiement</h3>
+          <h3 className="text-lg font-bold text-gray-900 mb-6 uppercase tracking-tighter italic">Demande de paiement</h3>
           <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
             <div className="sm:col-span-2">
               <label className="block text-sm font-bold text-gray-700">Famille</label>
-              <select
-                required
-                value={formData.category_id}
-                onChange={(e) => setFormData({ ...formData, category_id: e.target.value, sub_category_id: '' })}
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 outline-none focus:ring-2 focus:ring-blue-500"
-              >
+              <select required value={formData.category_id} onChange={(e) => setFormData({ ...formData, category_id: e.target.value, sub_category_id: '' })} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">Sélectionner</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
+                {categories.map((cat) => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
               </select>
             </div>
-
             <div className="sm:col-span-2">
               <label className="block text-sm font-bold text-gray-700">Sous-Famille</label>
-              <select
-                value={formData.sub_category_id}
-                onChange={(e) => setFormData({ ...formData, sub_category_id: e.target.value })}
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-                disabled={!formData.category_id}
-              >
+              <select value={formData.sub_category_id} onChange={(e) => setFormData({ ...formData, sub_category_id: e.target.value })} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50" disabled={!formData.category_id}>
                 <option value="">Sélectionner (Optionnel)</option>
-                {selectedCategory?.sub_categories?.map((sub: any) => (
-                  <option key={sub.id} value={sub.id}>{sub.name}</option>
-                ))}
+                {selectedCategory?.sub_categories?.map((sub: any) => <option key={sub.id} value={sub.id}>{sub.name}</option>)}
               </select>
             </div>
-
             <div className="sm:col-span-1">
               <label className="block text-sm font-bold text-gray-700">Montant (€)</label>
-              <input
-                type="number"
-                step="0.01"
-                required
-                value={formData.amount}
-                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <input type="number" step="0.01" required value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
-
             <div className="sm:col-span-1">
               <label className="block text-sm font-bold text-gray-700">Date</label>
-              <input
-                type="date"
-                required
-                value={formData.date}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <input type="date" required value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
-
             <div className="sm:col-span-4">
               <label className="block text-sm font-bold text-gray-700">Description</label>
-              <textarea
-                rows={2}
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <textarea rows={2} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
-
             <div className="sm:col-span-2">
               <label className="block text-sm font-bold text-gray-700">Pièce jointe (Facture)</label>
-              <input
-                type="file"
-                onChange={handleFileChange}
-                className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              />
+              <input type="file" onChange={handleFileChange} className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
             </div>
-
             <div className="sm:col-span-6 flex justify-end space-x-3 border-t pt-4">
-              <button
-                type="button"
-                onClick={() => setShowForm(false)}
-                className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-bold text-gray-700 hover:bg-gray-50"
-              >
-                Annuler
-              </button>
-              <button
-                type="submit"
-                className="bg-blue-600 py-2 px-6 border border-transparent rounded-md shadow-sm text-sm font-bold text-white hover:bg-blue-700 transition-colors"
-              >
-                Envoyer la demande
-              </button>
+              <button type="button" onClick={() => setShowForm(false)} className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-bold text-gray-700 hover:bg-gray-50">Annuler</button>
+              <button type="submit" className="bg-blue-600 py-2 px-6 border border-transparent rounded-md shadow-sm text-sm font-bold text-white hover:bg-blue-700 transition-colors">Envoyer la demande</button>
             </div>
           </form>
         </div>
@@ -296,23 +244,17 @@ export default function Expenses() {
                   {new Date(expense.date).toLocaleDateString()}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  <div className="font-bold">{expense.description || '-'}</div>
+                  <div className="font-bold tracking-tight">{expense.description || '-'}</div>
                   <div className="text-xs text-gray-400">
                     {(user?.role === 'admin' || user?.role === 'admin_level_1') && (
                       <span className="text-indigo-600 font-bold uppercase tracking-tight">
-                        {/* Affiche le Nom Complet construit ou l'Email en cas d'absence */}
                         {expense.user_full_name && expense.user_full_name !== "" 
                           ? expense.user_full_name 
                           : expense.user_email} • 
                       </span>
                     )}
                     {expense.attachment && (
-                      <button 
-                        onClick={() => setPreviewImage(expense.attachment)}
-                        className="text-blue-600 font-bold hover:underline"
-                      >
-                        Voir la facture
-                      </button>
+                      <button onClick={() => setPreviewImage(expense.attachment)} className="text-blue-600 font-bold hover:underline">Voir la facture</button>
                     )}
                   </div>
                   {expense.approved_by_email && (
@@ -322,12 +264,10 @@ export default function Expenses() {
                   )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <div className="font-bold text-gray-700">{expense.category_name}</div>
-                  {expense.sub_category_name && (
-                    <div className="text-xs text-gray-400">{expense.sub_category_name}</div>
-                  )}
+                  <div className="font-bold text-gray-700 tracking-tighter">{expense.category_name}</div>
+                  {expense.sub_category_name && <div className="text-xs text-gray-400 font-medium">{expense.sub_category_name}</div>}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-black text-gray-900">
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-black text-gray-900 tracking-tighter">
                   {expense.amount.toLocaleString()} €
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -336,72 +276,92 @@ export default function Expenses() {
                     expense.status === 'rejected' ? 'bg-red-100 text-red-800' :
                     'bg-yellow-100 text-yellow-800'
                   }`}>
-                    {expense.status === 'approved' ? 'Approuvé' :
-                     expense.status === 'rejected' ? 'Rejeté' : 'En attente'}
+                    {expense.status === 'approved' ? 'Approuvé' : expense.status === 'rejected' ? 'Rejeté' : 'En attente'}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <div className="flex justify-end space-x-3">
+                  <div className="flex justify-end space-x-2">
+                    {/* BOUTON ÉDITION ADMIN */}
+                    {(user?.role === 'admin' || user?.role === 'admin_level_1') && (
+                      <button 
+                        onClick={() => {
+                          setEditData({
+                            id: expense.id,
+                            amount: expense.amount.toString(),
+                            category_id: expense.category_id.toString(),
+                            sub_category_id: expense.sub_category_id?.toString() || '',
+                            description: expense.description || ''
+                          });
+                          setShowEditModal(true);
+                        }}
+                        className="text-gray-400 hover:text-blue-600 p-1.5 bg-gray-50 rounded-lg transition-colors"
+                        title="Modifier la dépense"
+                      >
+                        <Edit2 size={18} />
+                      </button>
+                    )}
+                    
                     {(user?.role === 'admin' || user?.role === 'admin_level_1') && expense.status === 'pending' && (
                       <>
-                        <button
-                          onClick={() => handleStatusUpdate(expense.id, 'approved')}
-                          className="text-green-600 hover:text-green-900 bg-green-50 p-1.5 rounded-lg transition-colors"
-                          title="Approuver"
-                        >
-                          <Check className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => handleStatusUpdate(expense.id, 'rejected')}
-                          className="text-red-600 hover:text-red-900 bg-red-50 p-1.5 rounded-lg transition-colors"
-                          title="Rejeter"
-                        >
-                          <X className="h-5 w-5" />
-                        </button>
+                        <button onClick={() => handleStatusUpdate(expense.id, 'approved')} className="text-green-600 hover:text-green-900 bg-green-50 p-1.5 rounded-lg transition-colors" title="Approuver"><Check className="h-5 w-5" /></button>
+                        <button onClick={() => handleStatusUpdate(expense.id, 'rejected')} className="text-red-600 hover:text-red-900 bg-red-50 p-1.5 rounded-lg transition-colors" title="Rejeter"><X className="h-5 w-5" /></button>
                       </>
                     )}
                     {(user?.role === 'admin' || user?.role === 'admin_level_1' || (expense.user_id === user?.id && expense.status === 'pending')) && (
-                      <button
-                        onClick={() => handleDelete(expense.id)}
-                        className="text-gray-400 hover:text-red-600 p-1.5 transition-colors"
-                        title="Supprimer"
-                      >
-                        <Trash2 className="h-5 w-5" />
-                      </button>
+                      <button onClick={() => handleDelete(expense.id)} className="text-gray-400 hover:text-red-600 p-1.5 transition-colors" title="Supprimer"><Trash2 className="h-5 w-5" /></button>
                     )}
                   </div>
                 </td>
               </tr>
             ))}
-            {filteredExpenses.length === 0 && !loading && (
-              <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-sm font-bold text-gray-500 bg-gray-50">
-                  Aucune dépense trouvée
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
 
+      {/* MODAL ÉDITION ADMIN */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[110] p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-2xl font-black mb-6 italic tracking-tighter uppercase">Modifier la dépense</h3>
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <div>
+                <label className="text-xs font-black text-gray-400 uppercase ml-2 tracking-widest">Montant (€)</label>
+                <input type="number" step="0.01" value={editData.amount} required className="w-full border-2 rounded-xl p-3 outline-none font-bold focus:border-indigo-500" 
+                  onChange={(e) => setEditData({...editData, amount: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs font-black text-gray-400 uppercase ml-2 tracking-widest">Famille</label>
+                <select required className="w-full border-2 rounded-xl p-3 font-bold bg-white outline-none focus:border-indigo-500" 
+                  value={editData.category_id} onChange={(e) => setEditData({...editData, category_id: e.target.value, sub_category_id: ''})}>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-black text-gray-400 uppercase ml-2 tracking-widest">Sous-Famille</label>
+                <select className="w-full border-2 rounded-xl p-3 font-bold bg-white outline-none focus:border-indigo-500" 
+                  value={editData.sub_category_id} onChange={(e) => setEditData({...editData, sub_category_id: e.target.value})}>
+                  <option value="">Général / Autre</option>
+                  {selectedCategoryEdit?.sub_categories?.map((sub: any) => (
+                    <option key={sub.id} value={sub.id}>{sub.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-3 pt-6 border-t mt-4">
+                <button type="button" onClick={() => setShowEditModal(false)} className="flex-1 py-3 font-bold text-gray-500">Annuler</button>
+                <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg flex items-center justify-center gap-2 uppercase tracking-tighter">
+                  <Save size={18}/> Sauvegarder
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {previewImage && (
-        <div 
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-80 p-4 backdrop-blur-sm"
-          onClick={() => setPreviewImage(null)}
-        >
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-80 p-4 backdrop-blur-sm" onClick={() => setPreviewImage(null)}>
           <div className="relative max-w-4xl w-full max-h-full flex flex-col items-center animate-in zoom-in duration-200">
-            <button 
-              className="absolute -top-12 right-0 text-white hover:text-gray-300 bg-gray-800 p-2 rounded-full"
-              onClick={() => setPreviewImage(null)}
-            >
-              <X className="h-6 w-6" />
-            </button>
-            <img 
-              src={previewImage} 
-              alt="Preview" 
-              className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border-4 border-white"
-              onClick={(e) => e.stopPropagation()}
-            />
+            <button className="absolute -top-12 right-0 text-white hover:text-gray-300 bg-gray-800 p-2 rounded-full" onClick={() => setPreviewImage(null)}><X className="h-6 w-6" /></button>
+            <img src={previewImage} alt="Preview" className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border-4 border-white" onClick={(e) => e.stopPropagation()} />
           </div>
         </div>
       )}
