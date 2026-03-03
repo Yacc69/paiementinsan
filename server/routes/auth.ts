@@ -124,4 +124,24 @@ router.patch('/update-profile', authenticateToken, async (req: AuthRequest, res)
   res.json(data);
 });
 
+/**
+* PATCH /users/:id/profile - Admin modifie le profil d'un utilisateur
+ */
+router.patch('/users/:id/profile', authenticateToken, async (req: AuthRequest, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Interdit' });
+  
+  const { first_name, last_name } = req.body;
+  const { id } = req.params;
+
+  const { data, error } = await supabase
+    .from('users')
+    .update({ first_name, last_name })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
 export default router;

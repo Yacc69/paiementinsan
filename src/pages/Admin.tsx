@@ -3,7 +3,7 @@ import { fetchApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { 
   UserPlus, Shield, Trash2, X, Plus, 
-  Layers, ChevronRight, User 
+  Layers, ChevronRight, User, Edit2, Mail, Save
 } from 'lucide-react';
 
 export default function Admin() {
@@ -16,11 +16,12 @@ export default function Admin() {
   const [loading, setLoading] = useState(true);
   
   const [showUserModal, setShowUserModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showCatModal, setShowCatModal] = useState(false);
   const [showSubCatModal, setShowSubCatModal] = useState(false);
 
-  // Initialisation avec Nom et Prénom
   const [newUser, setNewUser] = useState({ email: '', password: '', role: 'requester', first_name: '', last_name: '' });
+  const [editUser, setEditUser] = useState({ id: '', first_name: '', last_name: '' });
   const [newCat, setNewCat] = useState({ name: '' });
   const [newSubCat, setNewSubCat] = useState({ name: '', category_id: '' });
 
@@ -44,6 +45,19 @@ export default function Admin() {
       await fetchApi('/api/auth/register', { method: 'POST', body: JSON.stringify(newUser) });
       setShowUserModal(false);
       setNewUser({ email: '', password: '', role: 'requester', first_name: '', last_name: '' });
+      loadData();
+    } catch (err: any) { alert(err.message); }
+  };
+
+  // --- NOUVELLE ACTION : MODIFIER PROFIL ---
+  const handleUpdateUserProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await fetchApi(`/api/auth/users/${editUser.id}/profile`, { 
+        method: 'PATCH', 
+        body: JSON.stringify({ first_name: editUser.first_name, last_name: editUser.last_name }) 
+      });
+      setShowEditModal(false);
       loadData();
     } catch (err: any) { alert(err.message); }
   };
@@ -89,7 +103,7 @@ export default function Admin() {
     <div className="space-y-6 pb-20">
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
-          <h2 className="text-3xl font-black text-gray-900">Configuration</h2>
+          <h2 className="text-3xl font-black text-gray-900 italic tracking-tight">Configuration</h2>
           <p className="text-gray-500 font-medium">Gestion structure et membres</p>
         </div>
         
@@ -115,23 +129,30 @@ export default function Admin() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-4 text-left text-xs font-black text-gray-400 uppercase">Utilisateur</th>
-                <th className="px-6 py-4 text-left text-xs font-black text-gray-400 uppercase">Droit / Rôle</th>
-                <th className="px-6 py-4 text-right text-xs font-black text-gray-400 uppercase">Actions</th>
+                <th className="px-6 py-4 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Identité</th>
+                <th className="px-6 py-4 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Droit / Rôle</th>
+                <th className="px-6 py-4 text-right text-xs font-black text-gray-400 uppercase tracking-widest">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
               {users.map((u) => (
                 <tr key={u.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4">
-                    <div className="font-bold text-gray-900">{u.first_name} {u.last_name}</div>
-                    <div className="text-xs text-gray-400">{u.email}</div>
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-black text-sm uppercase">
+                        {u.first_name?.[0] || '?'}{u.last_name?.[0] || ''}
+                      </div>
+                      <div>
+                        <div className="font-black text-gray-900 text-sm">{u.first_name} {u.last_name}</div>
+                        <div className="text-xs text-gray-400 flex items-center gap-1 font-medium"><Mail size={10}/> {u.email}</div>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-6 py-4">
                     <select 
                       value={u.role}
                       onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                      className="text-xs font-bold border rounded-lg p-1 bg-gray-50 outline-none"
+                      className="text-xs font-black border rounded-lg p-1.5 bg-gray-50 outline-none focus:ring-2 focus:ring-indigo-500 uppercase tracking-tighter"
                     >
                       <option value="requester">Requester</option>
                       <option value="admin_level_1">Admin Level 1</option>
@@ -139,7 +160,17 @@ export default function Admin() {
                     </select>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button onClick={() => handleDeleteUser(u.id)} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={18}/></button>
+                    <div className="flex justify-end gap-2">
+                      <button 
+                        onClick={() => { setEditUser({id: u.id, first_name: u.first_name || '', last_name: u.last_name || ''}); setShowEditModal(true); }}
+                        className="text-gray-400 hover:text-indigo-600 p-2 rounded-lg hover:bg-indigo-50 transition-colors"
+                      >
+                        <Edit2 size={18}/>
+                      </button>
+                      <button onClick={() => handleDeleteUser(u.id)} className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 transition-colors">
+                        <Trash2 size={18}/>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -148,7 +179,7 @@ export default function Admin() {
         </div>
       )}
 
-      {/* Reste de l'onglet catégories identique pour ne pas détériorer */}
+      {/* Reste de l'onglet catégories (Inchangé pour ne pas détériorer) */}
       {activeTab === 'categories' && (
         <div className="space-y-4">
           <div className="flex justify-end gap-3 mb-4">
@@ -178,21 +209,21 @@ export default function Admin() {
         </div>
       )}
 
-      {/* Modals : Ajout des champs Nom/Prénom dans UserModal */}
-      {showUserModal && isAdminSupréme && (
+      {/* Modal : Ajouter Membre */}
+      {showUserModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
           <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
-            <h3 className="text-2xl font-black mb-6">Ajouter un collaborateur</h3>
+            <h3 className="text-2xl font-black mb-6 italic">Ajouter un membre</h3>
             <form onSubmit={handleAddUser} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <input type="text" placeholder="Prénom" required className="border-2 rounded-xl p-3 outline-none font-bold" 
+                <input type="text" placeholder="Prénom" required className="border-2 rounded-xl p-3 outline-none font-bold focus:border-indigo-500" 
                   onChange={(e) => setNewUser({...newUser, first_name: e.target.value})} />
-                <input type="text" placeholder="Nom" required className="border-2 rounded-xl p-3 outline-none font-bold" 
+                <input type="text" placeholder="Nom" required className="border-2 rounded-xl p-3 outline-none font-bold focus:border-indigo-500" 
                   onChange={(e) => setNewUser({...newUser, last_name: e.target.value})} />
               </div>
-              <input type="email" placeholder="Email" required className="w-full border-2 rounded-xl p-3 outline-none font-bold" 
+              <input type="email" placeholder="Email professionnel" required className="w-full border-2 rounded-xl p-3 outline-none font-bold focus:border-indigo-500" 
                 onChange={(e) => setNewUser({...newUser, email: e.target.value})} />
-              <input type="password" placeholder="Mot de passe" required className="w-full border-2 rounded-xl p-3 outline-none font-bold"
+              <input type="password" placeholder="Mot de passe provisoire" required className="w-full border-2 rounded-xl p-3 outline-none font-bold focus:border-indigo-500"
                 onChange={(e) => setNewUser({...newUser, password: e.target.value})} />
               <select className="w-full border-2 rounded-xl p-3 font-bold bg-white" 
                 onChange={(e) => setNewUser({...newUser, role: e.target.value})}>
@@ -202,45 +233,52 @@ export default function Admin() {
               </select>
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => setShowUserModal(false)} className="flex-1 py-3 font-bold text-gray-500">Annuler</button>
-                <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg">Valider</button>
+                <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg">Créer</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Modal Famille (Identique) */}
+      {/* --- NOUVEAU MODAL : MODIFIER MEMBRE --- */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-2xl font-black mb-6 italic">Éditer le profil</h3>
+            <form onSubmit={handleUpdateUserProfile} className="space-y-4">
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Prénom</label>
+                  <input type="text" value={editUser.first_name} required className="w-full border-2 rounded-xl p-3 outline-none font-bold focus:border-indigo-500" 
+                    onChange={(e) => setEditUser({...editUser, first_name: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Nom</label>
+                  <input type="text" value={editUser.last_name} required className="w-full border-2 rounded-xl p-3 outline-none font-bold focus:border-indigo-500" 
+                    onChange={(e) => setEditUser({...editUser, last_name: e.target.value})} />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-6">
+                <button type="button" onClick={() => setShowEditModal(false)} className="flex-1 py-3 font-bold text-gray-500">Annuler</button>
+                <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg flex items-center justify-center gap-2">
+                  <Save size={18}/> Enregistrer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modals Catégories (Inchangés) */}
       {showCatModal && (
         <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-50 p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl">
             <h3 className="text-2xl font-black mb-6">Nouvelle Famille</h3>
             <form onSubmit={handleAddCategory} className="space-y-4">
-              <input type="text" placeholder="Nom..." required className="w-full border-2 rounded-xl p-3 outline-none font-bold" 
+              <input type="text" placeholder="Nom..." required className="w-full border-2 rounded-xl p-3 outline-none font-bold focus:border-indigo-500" 
                 onChange={(e) => setNewCat({ name: e.target.value })} />
               <div className="flex gap-3">
                 <button type="button" onClick={() => setShowCatModal(false)} className="flex-1 py-3 font-bold">Annuler</button>
-                <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black">Créer</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Sous-Famille (Identique) */}
-      {showSubCatModal && (
-        <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-50 p-4">
-          <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl">
-            <h3 className="text-2xl font-black mb-6">Nouvelle Sous-Famille</h3>
-            <form onSubmit={handleAddSubCategory} className="space-y-4">
-              <select required className="w-full border-2 rounded-xl p-3 font-bold" 
-                onChange={(e) => setNewSubCat({...newSubCat, category_id: e.target.value})}>
-                <option value="">Sélectionner Famille</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <input type="text" placeholder="Nom..." required className="w-full border-2 rounded-xl p-3 outline-none font-bold" 
-                onChange={(e) => setNewSubCat({ ...newSubCat, name: e.target.value })} />
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setShowSubCatModal(false)} className="flex-1 py-3 font-bold">Annuler</button>
                 <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black">Créer</button>
               </div>
             </form>

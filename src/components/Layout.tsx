@@ -56,13 +56,12 @@ export default function Layout() {
             );
           })}
 
-          {/* --- SECTION SESSION UTILISATEUR MISE À JOUR --- */}
+          {/* SECTION SESSION UTILISATEUR */}
           <div className="mt-8 pt-6 border-t border-gray-100">
             <div className="px-3 mb-3 flex justify-between items-center">
               <p className="text-[10px] font-bold text-gray-400 tracking-widest uppercase">
                 Session Utilisateur
               </p>
-              {/* Bouton pour aller éditer son propre nom/prénom */}
               <button 
                 onClick={() => navigate('/settings')} 
                 className="text-gray-400 hover:text-blue-600 transition-colors"
@@ -74,14 +73,18 @@ export default function Layout() {
             
             <div className="flex flex-col gap-2 px-3 py-3 bg-gray-50 rounded-xl shadow-sm border border-gray-100">
               <div className="flex-1 min-w-0">
-                {/* Affichage du Nom et Prénom en priorité */}
-                <p className="text-sm font-black text-gray-900 truncate leading-tight">
-                  {user?.first_name || 'Utilisateur'} {user?.last_name || ''}
+                {/* Affichage Prénom + Nom en priorité */}
+                <p className="text-sm font-black text-gray-900 truncate leading-tight uppercase tracking-tighter">
+                  {user?.first_name || user?.last_name 
+                    ? `${user.first_name || ''} ${user.last_name || ''}`.trim() 
+                    : 'COMPTE INCOMPLET'}
                 </p>
-                <p className="text-[10px] text-gray-500 truncate mb-1 italic">
+                {/* Email en petit et italique */}
+                <p className="text-[10px] text-gray-500 truncate mb-1 italic font-medium">
                   {user?.email}
                 </p>
-                <span className="inline-block px-2 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-bold rounded-full uppercase">
+                {/* Badge de rôle */}
+                <span className="inline-block px-2 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-black rounded-full uppercase tracking-widest">
                   {user?.role?.replace('_', ' ')}
                 </span>
               </div>
@@ -93,10 +96,10 @@ export default function Layout() {
                 
                 <button
                   onClick={handleLogout}
-                  className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                  className="flex items-center gap-1 px-2 py-1 text-[9px] font-black text-red-500 hover:bg-red-50 rounded-md transition-colors uppercase tracking-widest"
                 >
                   <LogOut className="h-3 w-3" />
-                  DÉCONNEXION
+                  QUITTER
                 </button>
               </div>
             </div>
