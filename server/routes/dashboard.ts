@@ -44,7 +44,7 @@ router.get('/', async (req: AuthRequest, res) => {
     }
 
     // DÉPENSES AVEC SOUS-CATÉGORIES
-    // Note: On ajoute sub_category dans le select
+    // MODIFICATION ICI : On utilise .in pour inclure 'approved' ET 'paid'
     let expQuery = supabase
       .from('expenses')
       .select(`
@@ -52,7 +52,7 @@ router.get('/', async (req: AuthRequest, res) => {
         category:categories(name),
         sub_category:sub_categories(name)
       `)
-      .eq('status', 'approved');
+      .in('status', ['approved', 'paid']); 
 
     if (role !== 'admin' && role !== 'admin_level_1') {
       expQuery = expQuery.eq('user_id', userId);
@@ -86,7 +86,7 @@ router.get('/', async (req: AuthRequest, res) => {
     });
 
     res.json({
-      expensesByCategory: Object.values(categoriesMap), // Renvoie maintenant l'objet complet avec subFamilies
+      expensesByCategory: Object.values(categoriesMap),
       totalExpenses: expensesData?.reduce((sum, e) => sum + Number(e.amount), 0) || 0,
       totalPayroll: totalPayrollValue,
     });
@@ -95,7 +95,7 @@ router.get('/', async (req: AuthRequest, res) => {
   }
 });
 
-// --- GET /comparison (LOGIQUE IDENTIQUE ADMIN & MANAGER) ---
+// --- GET /comparison ---
 router.get('/comparison', async (req: AuthRequest, res) => {
   const { role, id: userId } = req.user!;
   const { months, type, categories: categoryIds } = req.query;
@@ -119,7 +119,14 @@ router.get('/comparison', async (req: AuthRequest, res) => {
         ? (employees?.filter(emp => new Date(emp.start_date) < targetDate).reduce((sum, emp) => sum + Number(emp.salary), 0) || 0)
         : 0;
 
-      let query = supabase.from('expenses').select('amount, category:categories(name, id)').eq('status', 'approved').gte('date', start).lt('date', end);
+      // MODIFICATION ICI AUSSI : .in pour inclure 'approved' ET 'paid'
+      let query = supabase
+        .from('expenses')
+        .select('amount, category:categories(name, id)')
+        .in('status', ['approved', 'paid']) 
+        .gte('date', start)
+        .lt('date', end);
+
       if (role !== 'admin' && role !== 'admin_level_1') query = query.eq('user_id', userId);
       if (categoryIds && type === 'category') query = query.in('category_id', (categoryIds as string).split(',').map(Number));
 
