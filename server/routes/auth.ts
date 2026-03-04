@@ -13,6 +13,7 @@ router.post('/login', async (req, res) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error || !data.user) return res.status(401).json({ error: 'Identifiants invalides' });
 
+    // Récupération du profil pour avoir le rôle exact
     const { data: profile, error: profileError } = await supabase
       .from('users')
       .select('role, first_name, last_name')
@@ -37,10 +38,14 @@ router.post('/login', async (req, res) => {
 });
 
 /**
- * POST /register - Création avec Nom et Prénom
+ * POST /register - Autorise admin ET admin_level_1 à créer des comptes
  */
 router.post('/register', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Accès réservé' });
+  // CORRECTION : On autorise les deux admins
+  const userRole = req.user?.role;
+  if (userRole !== 'admin' && userRole !== 'admin_level_1') {
+    return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
+  }
 
   const { email, password, role, first_name, last_name } = req.body;
 
@@ -77,11 +82,19 @@ router.post('/register', authenticateToken, async (req: AuthRequest, res) => {
 });
 
 /**
- * GET /users - Liste complète
+ * GET /users - Liste complète (Autorisée pour les deux admins)
  */
 router.get('/users', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'admin' && req.user?.role !== 'admin_level_1') return res.status(403).json({ error: 'Accès interdit' });
-  const { data: users, error } = await supabase.from('users').select('*').order('created_at', { ascending: false });
+  const userRole = req.user?.role;
+  if (userRole !== 'admin' && userRole !== 'admin_level_1') {
+    return res.status(403).json({ error: 'Accès interdit' });
+  }
+  
+  const { data: users, error } = await supabase
+    .from('users')
+    .select('*')
+    .order('created_at', { ascending: false });
+
   if (error) return res.status(500).json({ error: error.message });
   res.json(users);
 });
@@ -90,7 +103,11 @@ router.get('/users', authenticateToken, async (req: AuthRequest, res) => {
  * PATCH /users/:id - Modifier rôle
  */
 router.patch('/users/:id', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Interdit' });
+  const userRole = req.user?.role;
+  if (userRole !== 'admin' && userRole !== 'admin_level_1') {
+    return res.status(403).json({ error: 'Interdit' });
+  }
+
   const { role } = req.body;
   const { error } = await supabase.from('users').update({ role }).eq('id', req.params.id);
   if (error) return res.status(400).json({ error: error.message });
@@ -98,10 +115,14 @@ router.patch('/users/:id', authenticateToken, async (req: AuthRequest, res) => {
 });
 
 /**
- * DELETE /users/:id - Supprimer proprement
+ * DELETE /users/:id
  */
 router.delete('/users/:id', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Interdit' });
+  const userRole = req.user?.role;
+  if (userRole !== 'admin' && userRole !== 'admin_level_1') {
+    return res.status(403).json({ error: 'Interdit' });
+  }
+
   try {
     await supabaseAdmin.auth.admin.deleteUser(req.params.id);
     await supabase.from('users').delete().eq('id', req.params.id);
@@ -112,6 +133,7 @@ router.delete('/users/:id', authenticateToken, async (req: AuthRequest, res) => 
 });
 
 router.get('/me', authenticateToken, (req: AuthRequest, res) => res.json({ user: req.user }));
+
 router.post('/logout', async (req, res) => {
   await supabase.auth.signOut();
   res.json({ message: 'Déconnexion' });
@@ -124,11 +146,9 @@ router.patch('/update-profile', authenticateToken, async (req: AuthRequest, res)
   res.json(data);
 });
 
-/**
-* PATCH /users/:id/profile - Admin modifie le profil d'un utilisateur
- */
 router.patch('/users/:id/profile', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Interdit' });
+  const userRole = req.user?.role;
+  if (userRole !== 'admin' && userRole !== 'admin_level_1') return res.status(403).json({ error: 'Interdit' });
   
   const { first_name, last_name } = req.body;
   const { id } = req.params;
