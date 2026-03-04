@@ -12,11 +12,33 @@ import Settings from './pages/Settings';
 const PrivateRoute = ({ children, adminOnly = false, superAdminOnly = false }: { children: ReactNode, adminOnly?: boolean, superAdminOnly?: boolean }) => {
   const { user, loading } = useAuth();
 
-  if (loading) return <div className="flex justify-center items-center h-screen">Chargement...</div>;
-  if (!user) return <Navigate to="/login" />;
+  // 1. On attend que l'AuthContext ait fini de récupérer le profil Supabase
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-screen bg-gray-50">
+        <div className="flex flex-col items-center gap-2">
+          <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-indigo-600"></div>
+          <p className="text-sm text-gray-500 animate-pulse">Vérification des droits...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Si non connecté -> Login
+  if (!user) return <Navigate to="/login" replace />;
   
-  if (superAdminOnly && user.role !== 'admin') return <Navigate to="/" />;
-  if (adminOnly && user.role !== 'admin' && user.role !== 'admin_level_1') return <Navigate to="/" />;
+  // 3. LOGIQUE DE RESTRICTION (Stricte comme tu le souhaites)
+  
+  // Si la page demande Super Admin et qu'on ne l'est pas
+  if (superAdminOnly && user.role !== 'admin') {
+    return <Navigate to="/" replace />;
+  }
+
+  // Si la page demande Admin (Level 1 ou Super) et qu'on n'est ni l'un ni l'autre
+  const isAnyAdmin = user.role === 'admin' || user.role === 'admin_level_1';
+  if (adminOnly && !isAnyAdmin) {
+    return <Navigate to="/" replace />;
+  }
 
   return <>{children}</>;
 };
