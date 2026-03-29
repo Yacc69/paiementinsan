@@ -46,8 +46,10 @@ export default function Dashboard() {
 
   const isManager = user?.role === 'admin' || user?.role === 'admin_level_1';
 
-  const loadData = async () => {
-    setLoading(true);
+const loadData = async () => {
+    // 🛡️ MODIF : Ne met en chargement total que si on n'a AUCUNE stat
+    if (!stats) setLoading(true);
+    
     try {
       const [s, c] = await Promise.all([
         fetchApi(filterMonth ? `/api/dashboard?month=${filterMonth}` : '/api/dashboard'),
@@ -55,8 +57,11 @@ export default function Dashboard() {
       ]);
       setStats(s);
       setCategories(c);
-    } catch (err) { console.error(err); }
-    finally { setLoading(false); }
+    } catch (err) { 
+      console.error("Erreur Dashboard:", err); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   useEffect(() => { loadData(); }, [filterMonth]);

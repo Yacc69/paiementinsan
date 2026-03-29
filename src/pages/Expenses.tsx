@@ -32,7 +32,9 @@ export default function Expenses() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]); 
   const [previewFile, setPreviewFile] = useState<string | null>(null);
   const [paymentProof, setPaymentProof] = useState(''); // ÉTAT PREUVE VIREMENT
-  const { user } = useAuth();
+  
+  // 🛡️ MODIF : On récupère authLoading
+  const { user, loading: authLoading } = useAuth();
 
   const [formData, setFormData] = useState({
     category_id: '',
@@ -52,7 +54,9 @@ export default function Expenses() {
   });
 
   const loadData = async () => {
-    setLoading(true);
+    // 🛡️ MODIF : On ne met loading à true que si c'est le tout premier chargement
+    if (expenses.length === 0) setLoading(true);
+    
     try {
       const [expensesData, categoriesData] = await Promise.all([
         fetchApi('/api/expenses'),
@@ -68,7 +72,12 @@ export default function Expenses() {
     }
   };
 
-  useEffect(() => { loadData(); }, []);
+  // 🛡️ MODIF : On attend la sécurité Supabase
+  useEffect(() => {
+    if (!authLoading && user) {
+      loadData();
+    }
+  }, [user, authLoading]);
 
   const filteredExpenses = expenses.filter(e => {
     const matchesCategory = !filterCategory || e.category_id.toString() === filterCategory;
@@ -201,8 +210,20 @@ export default function Expenses() {
     return <FileArchive size={14} className="text-yellow-600" />;
   };
 
+  // 🛡️ MODIF : LE VERROU DE RENDU ANTI-CLIGNOTEMENT
+  if (authLoading || (loading && expenses.length === 0)) {
+    return (
+      <div className="flex h-[60vh] flex-col items-center justify-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
+        <p className="mt-4 font-black text-indigo-600 uppercase italic animate-pulse tracking-tighter">
+          Flux de données sécurisé...
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <h2 className="text-2xl font-black text-gray-900 tracking-tight italic uppercase">Gestion des Dépenses</h2>
         

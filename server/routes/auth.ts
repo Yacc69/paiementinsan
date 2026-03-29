@@ -104,14 +104,36 @@ router.get('/users', authenticateToken, async (req: AuthRequest, res) => {
  */
 router.patch('/users/:id', authenticateToken, async (req: AuthRequest, res) => {
   const userRole = req.user?.role;
+  // Sécurité Backend : Seuls les admins peuvent déclencher ça
   if (userRole !== 'admin' && userRole !== 'admin_level_1') {
     return res.status(403).json({ error: 'Interdit' });
   }
 
   const { role } = req.body;
-  const { error } = await supabase.from('users').update({ role }).eq('id', req.params.id);
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ message: 'Rôle mis à jour' });
+  const targetUserId = req.params.id;
+
+  try {
+    // 1. MISE À JOUR DU "BADGE" (Auth system)
+    // Indispensable pour que le JWT de l'utilisateur contienne son nouveau rôle à sa prochaine connexion
+    const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
+      targetUserId,
+      { user_metadata: { role: role } }
+    );
+    if (authError) throw authError;
+
+    // 2. MISE À JOUR DE LA TABLE VISIBLE (avec supabaseAdmin pour garantir l'écriture)
+    const { error: dbError } = await supabaseAdmin
+      .from('users')
+      .update({ role: role })
+      .eq('id', targetUserId);
+      
+    if (dbError) throw dbError;
+
+    res.json({ message: 'Rôle mis à jour définitivement avec succès' });
+  } catch (error: any) {
+    console.error("Erreur mise à jour rôle:", error.message);
+    res.status(400).json({ error: error.message });
+  }
 });
 
 /**
