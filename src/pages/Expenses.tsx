@@ -28,6 +28,8 @@ export default function Expenses() {
   const [showForm, setShowForm] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showPayModal, setShowPayModal] = useState<number | null>(null); // ÉTAT MODAL PAIEMENT
+  const [showRejectModal, setShowRejectModal] = useState<number | null>(null);
+  const [rejectionComment, setRejectionComment] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterMonth, setFilterMonth] = useState('');
   const [searchQuery, setSearchQuery] = useState(''); 
@@ -176,11 +178,20 @@ export default function Expenses() {
     } catch (err: any) { alert(err.message); }
   };
 
-  const handleStatusUpdate = async (id: number, status: 'approved' | 'rejected') => {
-    const action = status === 'approved' ? 'approuver' : 'refuser';
-    if (!confirm(`Voulez-vous vraiment ${action} cette dépense ?`)) return;
+  const handleStatusUpdate = async (id: number, status: 'approved' | 'rejected', comment?: string) => {
+    // Si on approuve, on demande confirmation classique. Si on rejette, la modale s'en charge.
+    if (status === 'approved' && !confirm(`Voulez-vous vraiment approuver cette dépense ?`)) return;
+    
     try {
-      await fetchApi(`/api/expenses/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      await fetchApi(`/api/expenses/${id}/status`, { 
+        method: 'PATCH', 
+        body: JSON.stringify({ status, rejection_comment: comment }) 
+      });
+      
+      if (status === 'rejected') {
+        setShowRejectModal(null);
+        setRejectionComment('');
+      }
       loadData();
     } catch (err: any) { alert(err.message); }
   };
@@ -389,6 +400,13 @@ const handleLendCard = async (e: React.FormEvent) => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div className="font-black tracking-tighter uppercase">{expense.description || '-'}</div>
+                  
+                  {/* NOUVEAU : AFFICHAGE DU MOTIF DE REFUS */}
+                  {expense.status === 'rejected' && expense.rejection_comment && (
+                    <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded-md text-[10px] text-red-800 font-bold whitespace-normal">
+                      Motif du refus : {expense.rejection_comment}
+                    </div>
+                  )}
                   <div className="text-[10px] text-gray-400 font-bold uppercase mt-1 flex flex-wrap gap-2">
                     {(user?.role === 'admin' || user?.role === 'admin_level_1') && (
                       <span className="text-indigo-600">
@@ -467,7 +485,7 @@ const handleLendCard = async (e: React.FormEvent) => {
                         <button onClick={() => handleStatusUpdate(expense.id, 'approved')} className="text-green-600 bg-green-50 p-1.5 rounded-lg hover:bg-green-100 transition-colors" title="Approuver">
                           <Check size={16} />
                         </button>
-                        <button onClick={() => handleStatusUpdate(expense.id, 'rejected')} className="text-red-600 bg-red-50 p-1.5 rounded-lg hover:bg-red-100 transition-colors" title="Rejeter">
+                        <button onClick={() => setShowRejectModal(expense.id)} className="text-red-600 bg-red-50 p-1.5 rounded-lg hover:bg-red-100 transition-colors" title="Rejeter">
                           <X size={16} />
                         </button>
                       </>
@@ -578,6 +596,30 @@ const handleLendCard = async (e: React.FormEvent) => {
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => setShowLendModal(null)} className="flex-1 py-3 font-bold text-gray-500">Annuler</button>
                 <button type="submit" className="flex-1 bg-orange-500 text-white py-3 rounded-xl font-black shadow-lg hover:bg-orange-600 transition-colors">Confirmer</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* NOUVELLE MODAL : REFUS DE DÉPENSE */}
+      {showRejectModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-2xl font-black mb-2 uppercase tracking-tighter italic text-red-600">Refuser la demande</h3>
+            <p className="text-sm text-gray-500 mb-6 font-bold">Indiquez le motif du refus. L'employé recevra ce message dans ses notifications.</p>
+            <form onSubmit={(e) => { e.preventDefault(); handleStatusUpdate(showRejectModal, 'rejected', rejectionComment); }} className="space-y-4">
+              <textarea 
+                placeholder="Ex: Justificatif manquant, hors budget, doublon..." 
+                required 
+                rows={3}
+                value={rejectionComment} 
+                onChange={(e) => setRejectionComment(e.target.value)} 
+                className="w-full border-2 rounded-xl p-3 outline-none focus:border-red-500 font-bold bg-gray-50 resize-none" 
+              />
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => { setShowRejectModal(null); setRejectionComment(''); }} className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors">Annuler</button>
+                <button type="submit" className="flex-1 bg-red-500 text-white py-3 rounded-xl font-black shadow-lg hover:bg-red-600 transition-colors">Confirmer le refus</button>
               </div>
             </form>
           </div>

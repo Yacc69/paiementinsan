@@ -117,26 +117,42 @@ router.post('/', async (req: AuthRequest, res) => {
 });
 
 /**
- * PATCH /:id/status - Validation/Rejet + Alerte Admins
+ * PATCH /:id/status - Validation/Rejet + Alerte Admins + Motif
  */
 router.patch('/:id/status', async (req: AuthRequest, res) => {
   const { role, id: adminId, email: adminEmail } = req.user!;
   if (role !== 'admin' && role !== 'admin_level_1') return res.status(403).json({ error: 'Interdit' });
   
-  const { status } = req.body;
+  const { status, rejection_comment } = req.body;
   const { id } = req.params;
 
   const { data: expense } = await supabaseAdmin.from('expenses').select('user_id, amount').eq('id', id).single();
-  const { error } = await supabaseAdmin.from('expenses').update({ status, approved_by: adminId }).eq('id', id);
+  
+  // On prépare les données à mettre à jour
+  const updateData: any = { status, approved_by: adminId };
+  if (status === 'rejected' && rejection_comment) {
+    updateData.rejection_comment = rejection_comment; // On enregistre le motif
+  } else if (status === 'approved') {
+    updateData.rejection_comment = null; // On efface le motif si finalement on accepte
+  }
+
+  const { error } = await supabaseAdmin.from('expenses').update(updateData).eq('id', id);
 
   if (error) return res.status(500).json({ error: error.message });
 
   if (expense) {
     const etat = status === 'approved' ? 'acceptée' : 'refusée';
+    let messageNotif = `Votre demande de ${expense.amount}€ a été ${etat}.`;
+    
+    // Si c'est refusé avec un motif, on l'ajoute à la notification de l'employé !
+    if (status === 'rejected' && rejection_comment) {
+      messageNotif += ` Motif : "${rejection_comment}"`;
+    }
+
     await supabaseAdmin.from('notifications').insert([{
       user_id: expense.user_id,
       title: `Dépense ${etat}`,
-      message: `Votre demande de ${expense.amount}€ a été ${etat}.`,
+      message: messageNotif,
       type: status === 'approved' ? 'success' : 'error',
       is_read: false
     }]);
