@@ -31,7 +31,7 @@ const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent
 };
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth(); // 🛡️ MODIF: authLoading ajouté
   const [stats, setStats] = useState<any>(null);
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,7 +64,9 @@ const loadData = async () => {
     }
   };
 
-  useEffect(() => { loadData(); }, [filterMonth]);
+  useEffect(() => { 
+    if (!authLoading && user) loadData(); 
+  }, [filterMonth, user, authLoading]); // 🛡️ MODIF: on attend authLoading
 
   useEffect(() => {
     const now = new Date();
@@ -106,8 +108,20 @@ const loadData = async () => {
     ...(isManager ? [{ name: 'Masse Salariale', total: stats.totalPayroll }] : [])
   ] : [];
 
+  // 🛡️ MODIF : LE VERROU DE FLUIDITÉ
+  if (authLoading || (loading && !stats)) {
+    return (
+      <div className="flex h-[60vh] flex-col items-center justify-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
+        <p className="mt-4 font-black text-indigo-600 uppercase italic animate-pulse tracking-tighter">
+          Synchronisation globale...
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6 pb-10">
+    <div className="space-y-6 pb-10 animate-in fade-in duration-500">
       <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-100">
         <div>
           <h2 className="text-xl font-bold text-gray-800">Vue d'ensemble</h2>

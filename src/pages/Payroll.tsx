@@ -25,7 +25,7 @@ export default function Payroll() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [filterMonth, setFilterMonth] = useState(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
   const [searchQuery, setSearchQuery] = useState('');
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth(); // 🛡️ MODIF: authLoading ajouté
 
   const [formData, setFormData] = useState({
     first_name: '',
@@ -35,7 +35,7 @@ export default function Payroll() {
   });
 
   const loadData = async () => {
-    setLoading(true);
+    if (employees.length === 0) setLoading(true); // 🛡️ MODIF: Ne charge qu'au premier coup
     try {
       const monthParam = filterMonth ? `&month=${filterMonth}` : '';
       const searchParam = searchQuery ? `&search=${searchQuery}` : '';
@@ -53,11 +53,12 @@ export default function Payroll() {
   };
 
   useEffect(() => {
+    if (authLoading || !user) return; // 🛡️ MODIF: on attend authLoading
     const timer = setTimeout(() => {
       loadData();
     }, 300);
     return () => clearTimeout(timer);
-  }, [filterMonth, searchQuery]);
+  }, [filterMonth, searchQuery, user, authLoading]);
 
   // --- LOGIQUE DE SOUMISSION (AJOUT OU MODIFICATION) ---
   const handleSubmit = async (e: React.FormEvent) => {
@@ -109,8 +110,20 @@ export default function Payroll() {
     }
   };
 
+  // 🛡️ MODIF : LE VERROU DE FLUIDITÉ
+  if (authLoading || (loading && employees.length === 0)) {
+    return (
+      <div className="flex h-[60vh] flex-col items-center justify-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
+        <p className="mt-4 font-black text-indigo-600 uppercase italic animate-pulse tracking-tighter">
+          Flux de données sécurisé...
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-900">Masse Salariale</h2>
         <div className="flex items-center space-x-4">

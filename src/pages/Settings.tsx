@@ -5,7 +5,7 @@ import { User, Save, ArrowLeft, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function Settings() {
-  const { user, setUser } = useAuth(); // On récupère setUser pour mettre à jour l'affichage global
+  const { user, setUser, loading: authLoading } = useAuth(); // 🛡️ MODIF: authLoading ajouté
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -38,6 +38,18 @@ export default function Settings() {
       setLoading(false);
     }
   };
+
+  // 🛡️ MODIF : LE VERROU DE FLUIDITÉ
+  if (authLoading || !user) {
+    return (
+      <div className="flex h-[60vh] flex-col items-center justify-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
+        <p className="mt-4 font-black text-indigo-600 uppercase italic animate-pulse tracking-tighter">
+          Chargement du profil...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">

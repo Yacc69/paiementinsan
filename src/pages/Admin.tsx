@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 
 export default function Admin() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth(); // 🛡️ MODIF: authLoading ajouté
   const isAdminSupréme = user?.role === 'admin';
   const [activeTab, setActiveTab] = useState<'users' | 'categories'>(isAdminSupréme ? 'users' : 'categories');
   
@@ -26,7 +26,7 @@ export default function Admin() {
   const [newSubCat, setNewSubCat] = useState({ name: '', category_id: '' });
 
   const loadData = async () => {
-    setLoading(true);
+    if (categories.length === 0 && (!isAdminSupréme || users.length === 0)) setLoading(true); // 🛡️ Ne charge qu'au premier coup
     try {
       const promises = [fetchApi('/api/categories')];
       if (isAdminSupréme) promises.push(fetchApi('/api/auth/users'));
@@ -37,7 +37,9 @@ export default function Admin() {
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { 
+    if (!authLoading && user) loadData(); 
+  }, [user, authLoading]); // 🛡️ MODIF: on attend authLoading
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,7 +88,6 @@ export default function Admin() {
     } catch (err: any) { alert(err.message); }
   };
 
-  // NOUVELLE FONCTION : SUPPRIMER FAMILLE
   const handleDeleteCategory = async (id: string) => {
     if (!confirm("Supprimer cette famille ? Assurez-vous qu'elle soit vide.")) return;
     try {
@@ -105,7 +106,6 @@ export default function Admin() {
     } catch (err: any) { alert(err.message); }
   };
 
-  // NOUVELLE FONCTION : SUPPRIMER SOUS-FAMILLE
   const handleDeleteSubCategory = async (id: string) => {
     if (!confirm("Supprimer cette sous-famille ?")) return;
     try {
@@ -114,10 +114,20 @@ export default function Admin() {
     } catch (err: any) { alert(err.message); }
   };
 
-  if (loading) return <div className="p-10 text-center font-bold">Chargement de l'administration...</div>;
+  // 🛡️ MODIF : LE VERROU DE FLUIDITÉ
+  if (authLoading || (loading && categories.length === 0)) {
+    return (
+      <div className="flex h-[60vh] flex-col items-center justify-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
+        <p className="mt-4 font-black text-indigo-600 uppercase italic animate-pulse tracking-tighter">
+          Flux de données sécurisé...
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-20 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
           <h2 className="text-3xl font-black text-gray-900 italic tracking-tight">Configuration</h2>
