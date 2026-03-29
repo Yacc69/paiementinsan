@@ -199,7 +199,28 @@ router.patch('/:id', async (req: AuthRequest, res) => {
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });
+/**
+ * PATCH /:id/lend-card - Indiquer que la carte est prêtée
+ */
+router.patch('/:id/lend-card', async (req: AuthRequest, res) => {
+  const { role } = req.user!;
+  if (role !== 'admin' && role !== 'admin_level_1') return res.status(403).json({ error: 'Interdit' });
 
+  const { id } = req.params;
+  const { card_lent_to } = req.body;
+
+  try {
+    const { error } = await supabaseAdmin
+      .from('expenses')
+      .update({ card_lent_to })
+      .eq('id', id);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 /**
  * PATCH /:id/pay - Confirmer le paiement avec preuve + Notification Employé
  */

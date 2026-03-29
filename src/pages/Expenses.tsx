@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import * as XLSX from 'xlsx'; // IMPORTATION XLSX
 import { 
   Plus, Check, X, Filter, Trash2, Edit2, Save, 
-  Search, CheckSquare, Square, FileText, FileArchive, Image as ImageIcon, Download, FileSpreadsheet, CreditCard
+  Search, CheckSquare, Square, FileText, FileArchive, Image as ImageIcon, Download, FileSpreadsheet, CreditCard, UserPlus
 } from 'lucide-react';
 
 const getMonthOptions = () => {
@@ -20,6 +20,8 @@ const getMonthOptions = () => {
 };
 
 export default function Expenses() {
+  const [showLendModal, setShowLendModal] = useState<number | null>(null);
+  const [lendName, setLendName] = useState('');
   const [expenses, setExpenses] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -196,7 +198,19 @@ export default function Expenses() {
       loadData();
     } catch (err: any) { alert(err.message); }
   };
-
+const handleLendCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await fetchApi(`/api/expenses/${showLendModal}/lend-card`, {
+        method: 'PATCH',
+        body: JSON.stringify({ card_lent_to: lendName })
+      });
+      setShowLendModal(null);
+      setLendName('');
+      loadData();
+    } catch (err: any) { alert(err.message); }
+  };
+  
   const handleDelete = async (id: number) => {
     if (!confirm('Supprimer cette dépense ?')) return;
     try {
@@ -391,6 +405,12 @@ export default function Expenses() {
                         <CreditCard size={12}/> Preuve Paiement
                       </button>
                     )}
+                    {/* NOUVEAU : BADGE CARTE PRÊTÉE */}
+                    {expense.card_lent_to && expense.status === 'approved' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-orange-100 text-orange-800 text-[9px] font-black uppercase">
+                        💳 Carte prêtée à {expense.card_lent_to}
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -412,6 +432,12 @@ export default function Expenses() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <div className="flex justify-end space-x-2">
+                    {/* NOUVEAU BOUTON : PRÊTER CARTE */}
+                    {(user?.role === 'admin' || user?.role === 'admin_level_1') && expense.status === 'approved' && !expense.card_lent_to && (
+                      <button onClick={() => setShowLendModal(expense.id)} className="text-white bg-orange-500 p-1.5 rounded-lg hover:bg-orange-600 transition-colors shadow-sm" title="Prêter la carte">
+                        <UserPlus size={16} />
+                      </button>
+                    )}
                     {/* BOUTON VIREMENT FAIT */}
                     {(user?.role === 'admin' || user?.role === 'admin_level_1') && expense.status === 'approved' && (
                       <button onClick={() => setShowPayModal(expense.id)} className="text-white bg-indigo-600 p-1.5 rounded-lg hover:bg-indigo-700" title="Marquer comme payé">
@@ -498,13 +524,60 @@ export default function Expenses() {
       {showPayModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
           <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
-            <h3 className="text-2xl font-black mb-2 uppercase tracking-tighter italic">Virement effectué</h3>
-            <p className="text-sm text-gray-500 mb-6 font-bold">Ajoutez une preuve de virement pour valider le paiement final.</p>
+            <h3 className="text-2xl font-black mb-2 uppercase tracking-tighter italic">Paiement effectué</h3>
+            
+            {/* Si la carte a été prêtée, le texte change et on précise que c'est optionnel */}
+            {expenses.find(e => e.id === showPayModal)?.card_lent_to ? (
+              <p className="text-sm text-orange-600 mb-6 font-bold">
+                Carte récupérée de <b>{expenses.find(e => e.id === showPayModal)?.card_lent_to}</b>.<br/> 
+                La pièce jointe est optionnelle.
+              </p>
+            ) : (
+              <p className="text-sm text-gray-500 mb-6 font-bold">Ajoutez une preuve de virement pour valider le paiement final.</p>
+            )}
+
             <form onSubmit={handleConfirmPayment} className="space-y-4">
-              <input type="file" required accept="image/*,.pdf" onChange={(e) => handleFileChange(e, true)} className="w-full border-2 border-dashed rounded-xl p-6 font-bold text-xs" />
+              {/* Le "required" disparaît si la carte était prêtée ! */}
+              <input 
+                type="file" 
+                required={!expenses.find(e => e.id === showPayModal)?.card_lent_to} 
+                accept="image/*,.pdf" 
+                onChange={(e) => handleFileChange(e, true)} 
+                className="w-full border-2 border-dashed rounded-xl p-6 font-bold text-xs" 
+              />
               <div className="flex gap-3 pt-6">
                 <button type="button" onClick={() => setShowPayModal(null)} className="flex-1 py-3 font-bold text-gray-500">Annuler</button>
-                <button type="submit" disabled={!paymentProof} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg disabled:opacity-50">Valider le paiement</button>
+                <button 
+                  type="submit" 
+                  disabled={!paymentProof && !expenses.find(e => e.id === showPayModal)?.card_lent_to} 
+                  className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg disabled:opacity-50"
+                >
+                  Valider
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* NOUVELLE MODAL : PRÊT DE CARTE */}
+      {showLendModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-2xl font-black mb-2 uppercase tracking-tighter italic text-orange-600">Prêter la carte</h3>
+            <p className="text-sm text-gray-500 mb-6 font-bold">Indiquez à qui la carte de l'entreprise a été confiée.</p>
+            <form onSubmit={handleLendCard} className="space-y-4">
+              <input 
+                type="text" 
+                placeholder="Ex: Jean Dupont" 
+                required 
+                value={lendName} 
+                onChange={(e) => setLendName(e.target.value)} 
+                className="w-full border-2 rounded-xl p-3 outline-none focus:border-orange-500 font-bold bg-gray-50" 
+              />
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowLendModal(null)} className="flex-1 py-3 font-bold text-gray-500">Annuler</button>
+                <button type="submit" className="flex-1 bg-orange-500 text-white py-3 rounded-xl font-black shadow-lg hover:bg-orange-600 transition-colors">Confirmer</button>
               </div>
             </form>
           </div>
