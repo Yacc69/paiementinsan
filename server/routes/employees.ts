@@ -1,5 +1,5 @@
 import express from 'express';
-import { supabase } from '../supabase.js';
+import { supabaseAdmin } from '../supabase.js'; // Le seul et unique client nécessaire ici (Pass VIP)
 import { authenticateToken, AuthRequest, requireSuperAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -12,15 +12,16 @@ router.use(authenticateToken);
  */
 async function notifyAllAdmins(title: string, message: string) {
   try {
-    // 1. On récupère les IDs de tous les admins
-    const { data: users, error: fetchError } = await supabase
+    // 1. On récupère les IDs de tous les admins (Avec supabaseAdmin !)
+    const { data: users, error: fetchError } = await supabaseAdmin
       .from('users')
-      .select('id, role');
+      .select('id, role')
+      .limit(100000); // Sécurité anti-plafond
 
-    if (fetchError) return;
+    if (fetchError) throw fetchError;
 
     // 2. On filtre pour ne garder que les admins
-    const adminList = users.filter(u => u.role === 'admin' || u.role === 'admin_level_1');
+    const adminList = users?.filter(u => u.role === 'admin' || u.role === 'admin_level_1') || [];
 
     if (adminList.length > 0) {
       const notifications = adminList.map(adm => ({
@@ -32,7 +33,7 @@ async function notifyAllAdmins(title: string, message: string) {
       }));
 
       // 3. Insertion en masse dans la table notifications
-      await supabase.from('notifications').insert(notifications);
+      await supabaseAdmin.from('notifications').insert(notifications);
       console.log(`✅ Notification Salarié envoyée à ${adminList.length} admins.`);
     }
   } catch (err) {
@@ -46,12 +47,14 @@ async function notifyAllAdmins(title: string, message: string) {
 router.get('/', requireSuperAdmin, async (req: AuthRequest, res) => {
   const { month, search } = req.query;
   
-  let query = supabase
+  // Remplacement par supabaseAdmin + suppression du plafond
+  let query = supabaseAdmin
     .from('employees')
     .select(`
       *,
       added_by_user:users(email)
-    `);
+    `)
+    .limit(100000);
 
   if (month && typeof month === 'string') {
     const [year, m] = month.split('-').map(Number);
@@ -67,10 +70,10 @@ router.get('/', requireSuperAdmin, async (req: AuthRequest, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   
-  const formattedEmployees = employees.map(e => ({
+  const formattedEmployees = employees?.map(e => ({
     ...e,
     added_by_email: (e as any).added_by_user?.email
-  }));
+  })) || [];
 
   res.json(formattedEmployees);
 });
@@ -83,7 +86,7 @@ router.post('/', requireSuperAdmin, async (req: AuthRequest, res) => {
   const added_by = req.user!.id; 
   const admin_email = req.user!.email;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('employees')
     .insert([{ 
       first_name, 
@@ -116,8 +119,8 @@ router.delete('/:id', requireSuperAdmin, async (req: AuthRequest, res) => {
   const admin_email = req.user!.email;
   const { id } = req.params;
 
-  // 1. Récupérer les infos du salarié avant suppression pour la notification
-  const { data: employee, error: fetchError } = await supabase
+  // 1. Récupérer les infos du salarié avec supabaseAdmin
+  const { data: employee, error: fetchError } = await supabaseAdmin
     .from('employees')
     .select('first_name, last_name')
     .eq('id', id)
@@ -128,7 +131,7 @@ router.delete('/:id', requireSuperAdmin, async (req: AuthRequest, res) => {
   }
 
   // 2. Supprimer le salarié
-  const { error: deleteError } = await supabase
+  const { error: deleteError } = await supabaseAdmin
     .from('employees')
     .delete()
     .eq('id', id);
@@ -137,7 +140,7 @@ router.delete('/:id', requireSuperAdmin, async (req: AuthRequest, res) => {
     return res.status(500).json({ error: deleteError.message });
   }
 
-  // 3. Envoyer la notification de suppression aux admins
+  // 3. Envoyer la notification
   await notifyAllAdmins(
     "🗑️ Salarié supprimé",
     `L'admin ${admin_email} a supprimé ${employee.first_name} ${employee.last_name} de la liste du personnel.`
@@ -156,10 +159,11 @@ router.get('/payroll', requireSuperAdmin, async (req: AuthRequest, res) => {
     const [year, m] = month.split('-').map(Number);
     const nextMonthLimit = new Date(year, m, 1).toISOString().slice(0, 10);
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('employees')
       .select('salary')
-      .lt('start_date', nextMonthLimit);
+      .lt('start_date', nextMonthLimit)
+      .limit(100000);
 
     if (error) return res.status(500).json({ error: error.message });
     
@@ -167,10 +171,11 @@ router.get('/payroll', requireSuperAdmin, async (req: AuthRequest, res) => {
     return res.json({ total_payroll: total });
 
   } else {
-    const { data: employees, error } = await supabase
+    const { data: employees, error } = await supabaseAdmin
       .from('employees')
       .select('salary, start_date')
-      .order('start_date', { ascending: true });
+      .order('start_date', { ascending: true })
+      .limit(100000);
 
     if (error) return res.status(500).json({ error: error.message });
     if (!employees || employees.length === 0) return res.json({ total_payroll: 0 });
@@ -201,15 +206,15 @@ router.patch('/:id', requireSuperAdmin, async (req: AuthRequest, res) => {
   const { id } = req.params;
   const { first_name, last_name, salary, start_date } = req.body;
 
-  // 1. Récupérer les anciennes valeurs pour une notification précise
-  const { data: oldData } = await supabase
+  // 1. Récupérer les anciennes valeurs
+  const { data: oldData } = await supabaseAdmin
     .from('employees')
     .select('first_name, last_name, salary')
     .eq('id', id)
     .single();
 
-  // 2. Mise à jour
-  const { data, error } = await supabase
+  // 2. Mise à jour avec supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('employees')
     .update({ 
       first_name, 

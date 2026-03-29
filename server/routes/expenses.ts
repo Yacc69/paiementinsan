@@ -1,5 +1,5 @@
 import express from 'express';
-import { supabase } from '../supabase.js';
+import { supabaseAdmin } from '../supabase.js';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -8,20 +8,20 @@ router.use(authenticateToken);
 
 /**
  * FONCTION DE NOTIFICATION SYSTÉMATIQUE
- * Elle cherche tous les admins et leur envoie une notification
  */
 async function notifyAllAdmins(title: string, message: string) {
   try {
-    const { data: admins, error: fetchError } = await supabase
+    const { data: admins, error: fetchError } = await supabaseAdmin
       .from('users')
-      .select('id, role');
+      .select('id, role')
+      .limit(100000);
 
     if (fetchError) {
       console.error("❌ Erreur lors de la récupération des admins:", fetchError.message);
       return;
     }
 
-    const adminList = admins.filter(u => u.role === 'admin' || u.role === 'admin_level_1');
+    const adminList = admins?.filter(u => u.role === 'admin' || u.role === 'admin_level_1') || [];
     
     if (adminList.length > 0) {
       const notifications = adminList.map(adm => ({
@@ -32,7 +32,7 @@ async function notifyAllAdmins(title: string, message: string) {
         is_read: false
       }));
 
-      const { error: insertError } = await supabase.from('notifications').insert(notifications);
+      const { error: insertError } = await supabaseAdmin.from('notifications').insert(notifications);
       if (insertError) {
         console.error("❌ Erreur lors de l'insertion des notifications admins:", insertError.message);
       }
@@ -48,7 +48,7 @@ async function notifyAllAdmins(title: string, message: string) {
 router.get('/', async (req: AuthRequest, res) => {
   const { role, id } = req.user!;
   
-  let query = supabase
+  let query = supabaseAdmin
     .from('expenses')
     .select(`
       *,
@@ -56,7 +56,8 @@ router.get('/', async (req: AuthRequest, res) => {
       sub_category:sub_categories(name),
       user:users!expenses_user_id_fkey(email, first_name, last_name),
       approver:users!expenses_approved_by_fkey(email)
-    `);
+    `)
+    .limit(100000);
 
   if (role !== 'admin' && role !== 'admin_level_1') {
     query = query.eq('user_id', id);
@@ -68,7 +69,7 @@ router.get('/', async (req: AuthRequest, res) => {
     return res.status(500).json({ error: error.message });
   }
 
-  const formattedExpenses = expenses.map(e => {
+  const formattedExpenses = expenses?.map(e => {
     const firstName = e.user?.first_name || '';
     const lastName = e.user?.last_name || '';
     const fullName = `${firstName} ${lastName}`.trim();
@@ -81,7 +82,7 @@ router.get('/', async (req: AuthRequest, res) => {
       user_full_name: fullName || null,
       approved_by_email: e.approver?.email
     };
-  });
+  }) || [];
 
   res.json(formattedExpenses);
 });
@@ -94,7 +95,7 @@ router.post('/', async (req: AuthRequest, res) => {
   const user_id = req.user!.id;
   const user_email = req.user!.email;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('expenses')
     .insert([{ 
       user_id, category_id, 
@@ -102,7 +103,8 @@ router.post('/', async (req: AuthRequest, res) => {
       amount, description, date, 
       attachment: attachment || null 
     }])
-    .select().single();
+    .select()
+    .single();
 
   if (error) return res.status(400).json({ error: error.message });
 
@@ -124,15 +126,14 @@ router.patch('/:id/status', async (req: AuthRequest, res) => {
   const { status } = req.body;
   const { id } = req.params;
 
-  const { data: expense } = await supabase.from('expenses').select('user_id, amount').eq('id', id).single();
-
-  const { error } = await supabase.from('expenses').update({ status, approved_by: adminId }).eq('id', id);
+  const { data: expense } = await supabaseAdmin.from('expenses').select('user_id, amount').eq('id', id).single();
+  const { error } = await supabaseAdmin.from('expenses').update({ status, approved_by: adminId }).eq('id', id);
 
   if (error) return res.status(500).json({ error: error.message });
 
   if (expense) {
     const etat = status === 'approved' ? 'acceptée' : 'refusée';
-    await supabase.from('notifications').insert([{
+    await supabaseAdmin.from('notifications').insert([{
       user_id: expense.user_id,
       title: `Dépense ${etat}`,
       message: `Votre demande de ${expense.amount}€ a été ${etat}.`,
@@ -153,13 +154,13 @@ router.patch('/:id/status', async (req: AuthRequest, res) => {
  * DELETE /:id - Suppression + Alerte Admins
  */
 router.delete('/:id', async (req: AuthRequest, res) => {
-  const { role, id: userId, email: userEmail } = req.user!;
+  const { role, email: userEmail } = req.user!;
   const { id } = req.params;
 
-  const { data: expense } = await supabase.from('expenses').select('amount').eq('id', id).single();
+  const { data: expense } = await supabaseAdmin.from('expenses').select('amount').eq('id', id).single();
 
   if (expense) {
-    const { error: deleteError } = await supabase.from('expenses').delete().eq('id', id);
+    const { error: deleteError } = await supabaseAdmin.from('expenses').delete().eq('id', id);
     if (deleteError) return res.status(500).json({ error: deleteError.message });
 
     await notifyAllAdmins(
@@ -183,7 +184,7 @@ router.patch('/:id', async (req: AuthRequest, res) => {
   const { id } = req.params;
   const { amount, category_id, sub_category_id, description } = req.body;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('expenses')
     .update({ 
       amount: Number(amount), 
@@ -210,8 +211,7 @@ router.patch('/:id/pay', async (req: AuthRequest, res) => {
   const { payment_proof } = req.body;
 
   try {
-    // 1. On récupère l'USER_ID et les détails de la dépense
-    const { data: expense, error: fetchErr } = await supabase
+    const { data: expense, error: fetchErr } = await supabaseAdmin
       .from('expenses')
       .select('user_id, amount, description')
       .eq('id', id)
@@ -219,19 +219,17 @@ router.patch('/:id/pay', async (req: AuthRequest, res) => {
 
     if (fetchErr || !expense) return res.status(404).json({ error: "Dépense introuvable" });
 
-    // 2. Mise à jour du statut en 'paid'
-    const { error: updErr } = await supabase
+    const { error: updErr } = await supabaseAdmin
       .from('expenses')
       .update({ status: 'paid', payment_proof })
       .eq('id', id);
 
     if (updErr) return res.status(400).json({ error: updErr.message });
 
-    // 3. INSERTION NOTIFICATION EMPLOYÉ
-    const { error: notifErr } = await supabase.from('notifications').insert([{
+    const { error: notifErr } = await supabaseAdmin.from('notifications').insert([{
       user_id: expense.user_id,
       title: 'Virement effectué 💸',
-      message: `Le virement pour votre dépense de ${expense.amount}€ ("${expense.description || 'sans description'}") a été réalisé.`,
+      message: `Le virement pour votre dépense de ${expense.amount}€ a été réalisé.`,
       type: 'success', 
       is_read: false
     }]);
@@ -240,7 +238,6 @@ router.patch('/:id/pay', async (req: AuthRequest, res) => {
       console.error("❌ ERREUR NOTIFICATION SUPABASE:", notifErr.message);
     }
 
-    // 4. Notifier les autres admins
     await notifyAllAdmins("✅ Paiement confirmé", `Paiement de ${expense.amount}€ validé par ${adminEmail}.`);
 
     res.json({ success: true });

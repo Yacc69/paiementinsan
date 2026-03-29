@@ -147,7 +147,7 @@ router.delete('/users/:id', authenticateToken, async (req: AuthRequest, res) => 
 
   try {
     await supabaseAdmin.auth.admin.deleteUser(req.params.id);
-    await supabase.from('users').delete().eq('id', req.params.id);
+    await supabaseAdmin.from('users').delete().eq('id', req.params.id);
     res.json({ message: 'Supprimé avec succès' });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
@@ -163,7 +163,7 @@ router.post('/logout', async (req, res) => {
 
 router.patch('/update-profile', authenticateToken, async (req: AuthRequest, res) => {
   const { first_name, last_name } = req.body;
-  const { data, error } = await supabase.from('users').update({ first_name, last_name }).eq('id', req.user!.id).select().single();
+  const { data, error } = await supabaseAdmin.from('users').update({ first_name, last_name }).eq('id', req.user!.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });

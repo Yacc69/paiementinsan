@@ -1,5 +1,5 @@
 import express from 'express';
-import { supabase } from '../supabase.js';
+import { supabaseAdmin } from '../supabase.js';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -14,7 +14,7 @@ router.use(authenticateToken);
 router.get('/', async (req: AuthRequest, res) => {
   const userId = req.user!.id;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('notifications')
     .select('*')
     .eq('user_id', userId)
@@ -36,7 +36,7 @@ router.patch('/:id/read', async (req: AuthRequest, res) => {
   const { id } = req.params;
   const userId = req.user!.id;
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('notifications')
     .update({ is_read: true })
     .eq('id', id)
@@ -56,7 +56,7 @@ router.patch('/:id/read', async (req: AuthRequest, res) => {
 router.patch('/read-all', async (req: AuthRequest, res) => {
   const userId = req.user!.id;
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('notifications')
     .update({ is_read: true })
     .eq('user_id', userId)

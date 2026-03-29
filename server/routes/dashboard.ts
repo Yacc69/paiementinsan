@@ -1,5 +1,5 @@
 import express from 'express';
-import { supabase } from '../supabase.js';
+import { supabaseAdmin } from '../supabase.js'; // <-- PASS VIP
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -29,7 +29,7 @@ router.get('/', async (req: AuthRequest, res) => {
     // MASSE SALARIALE
     let totalPayrollValue = 0;
     if (role === 'admin' || role === 'admin_level_1') {
-      const { data: employees } = await supabase.from('employees').select('salary, start_date');
+      const { data: employees } = await supabaseAdmin.from('employees').select('salary, start_date');
       const now = new Date();
       
       employees?.forEach(emp => {
@@ -44,20 +44,25 @@ router.get('/', async (req: AuthRequest, res) => {
     }
 
     // DÉPENSES AVEC SOUS-CATÉGORIES
-    // MODIFICATION ICI : On utilise .in pour inclure 'approved' ET 'paid'
-    let expQuery = supabase
+    let expQuery = supabaseAdmin
       .from('expenses')
       .select(`
         amount, 
         category:categories(name),
         sub_category:sub_categories(name)
       `)
-      .in('status', ['approved', 'paid']); 
+      .in('status', ['approved', 'paid'])
+      .limit(100000); // <-- CORRECTION : Plafond cassé pour TOUT LE MONDE
 
+    // Filtrage pour les requesters (ils ne voient que leurs propres dépenses)
     if (role !== 'admin' && role !== 'admin_level_1') {
       expQuery = expQuery.eq('user_id', userId);
     }
-    if (monthStart && monthNext) expQuery = expQuery.gte('date', monthStart).lt('date', monthNext);
+    
+    // Filtrage par date si un mois est sélectionné
+    if (monthStart && monthNext) {
+      expQuery = expQuery.gte('date', monthStart).lt('date', monthNext);
+    }
 
     const { data: expensesData } = await expQuery;
 
@@ -109,7 +114,7 @@ router.get('/comparison', async (req: AuthRequest, res) => {
   const results: any = {};
 
   try {
-    const { data: employees } = await supabase.from('employees').select('salary, start_date');
+    const { data: employees } = await supabaseAdmin.from('employees').select('salary, start_date');
 
     for (const m of monthList) {
       const { start, end } = getMonthBounds(m);
@@ -119,13 +124,14 @@ router.get('/comparison', async (req: AuthRequest, res) => {
         ? (employees?.filter(emp => new Date(emp.start_date) < targetDate).reduce((sum, emp) => sum + Number(emp.salary), 0) || 0)
         : 0;
 
-      // MODIFICATION ICI AUSSI : .in pour inclure 'approved' ET 'paid'
-      let query = supabase
+      // MODIFICATION ICI : supabaseAdmin + .limit(100000)
+      let query = supabaseAdmin
         .from('expenses')
         .select('amount, category:categories(name, id)')
         .in('status', ['approved', 'paid']) 
         .gte('date', start)
-        .lt('date', end);
+        .lt('date', end)
+        .limit(100000); // <-- CORRECTION : Plafond cassé ici aussi
 
       if (role !== 'admin' && role !== 'admin_level_1') query = query.eq('user_id', userId);
       if (categoryIds && type === 'category') query = query.in('category_id', (categoryIds as string).split(',').map(Number));

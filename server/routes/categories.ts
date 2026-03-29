@@ -1,5 +1,5 @@
 import express from 'express';
-import { supabase } from '../supabase.js';
+import { supabaseAdmin } from '../supabase.js';
 import { authenticateToken, AuthRequest, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -13,7 +13,7 @@ router.use(authenticateToken);
  * Accessible par tous les utilisateurs connectés
  */
 router.get('/', async (req: AuthRequest, res) => {
-  const { data: categories, error } = await supabase
+  const { data: categories, error } = await supabaseAdmin
     .from('categories')
     .select(`
       id,
@@ -24,7 +24,8 @@ router.get('/', async (req: AuthRequest, res) => {
         category_id
       )
     `)
-    .order('name', { ascending: true });
+    .order('name', { ascending: true })
+    .limit(1000); // 1000 familles max, largement suffisant
 
   if (error) {
     console.error("Erreur récupération categories:", error);
@@ -46,7 +47,7 @@ router.post('/', requireAdmin, async (req: AuthRequest, res) => {
     return res.status(400).json({ error: 'Le nom de la famille est requis' });
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('categories')
     .insert([{ name }])
     .select()
@@ -72,7 +73,7 @@ router.post('/sub', requireAdmin, async (req: AuthRequest, res) => {
     return res.status(400).json({ error: 'L’ID de catégorie (famille) et le nom sont requis' });
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('sub_categories')
     .insert([{ category_id, name }])
     .select()
@@ -85,14 +86,15 @@ router.post('/sub', requireAdmin, async (req: AuthRequest, res) => {
 
   res.status(201).json(data);
 });
+
 /**
  * DELETE /:id - Supprimer une Famille
  */
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Interdit' });
+  if (req.user?.role !== 'admin' && req.user?.role !== 'admin_level_1') return res.status(403).json({ error: 'Interdit' });
   const { id } = req.params;
 
-  const { error } = await supabase.from('categories').delete().eq('id', id);
+  const { error } = await supabaseAdmin.from('categories').delete().eq('id', id);
   if (error) return res.status(400).json({ error: "Impossible de supprimer : vérifiez que la famille est vide." });
 
   res.json({ success: true });
@@ -102,12 +104,13 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
  * DELETE /sub/:id - Supprimer une Sous-Famille
  */
 router.delete('/sub/:id', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Interdit' });
+  if (req.user?.role !== 'admin' && req.user?.role !== 'admin_level_1') return res.status(403).json({ error: 'Interdit' });
   const { id } = req.params;
 
-  const { error } = await supabase.from('sub_categories').delete().eq('id', id);
+  const { error } = await supabaseAdmin.from('sub_categories').delete().eq('id', id);
   if (error) return res.status(400).json({ error: "Erreur lors de la suppression." });
 
   res.json({ success: true });
 });
+
 export default router;
