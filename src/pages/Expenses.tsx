@@ -91,7 +91,18 @@ export default function Expenses() {
     return matchesCategory && matchesMonth && matchesSearch;
   });
 
+// --- CALCULS DES MONTANTS POUR LE BANDEAU ---
   const totalFiltered = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+  
+  // Les montants
+  const amountPending = filteredExpenses.filter(e => e.status === 'pending').reduce((sum, e) => sum + e.amount, 0);
+  const amountApproved = filteredExpenses.filter(e => e.status === 'approved' || e.status === 'paid').reduce((sum, e) => sum + e.amount, 0);
+  const amountRejected = filteredExpenses.filter(e => e.status === 'rejected').reduce((sum, e) => sum + e.amount, 0);
+
+  // Les compteurs (pour garder l'info du nombre de requêtes)
+  const countPending = filteredExpenses.filter(e => e.status === 'pending').length;
+  const countApproved = filteredExpenses.filter(e => e.status === 'approved' || e.status === 'paid').length;
+  const countRejected = filteredExpenses.filter(e => e.status === 'rejected').length;
 
   // --- LOGIQUE EXPORT EXCEL ---
   const handleExportExcel = () => {
@@ -266,26 +277,32 @@ export default function Expenses() {
         </div>
       )}
 
-      {/* TON BANDEAU AVEC LES INFOS (CONSERVÉ) */}
+{/* BANDEAU AVEC LES INFOS DÉTAILLÉES */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-        <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-xl">
+        <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-xl shadow-sm">
           <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest">Total Sélection</p>
           <p className="text-xl font-black text-blue-700">{totalFiltered.toLocaleString()} €</p>
+          <p className="text-[10px] text-blue-500 font-bold mt-1">{filteredExpenses.length} demande(s)</p>
         </div>
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-xl">
+        
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-xl shadow-sm">
           <p className="text-[10px] text-yellow-600 font-black uppercase tracking-widest">En cours</p>
-          <p className="text-xl font-black text-yellow-700">{filteredExpenses.filter(e => e.status === 'pending').length}</p>
+          <p className="text-xl font-black text-yellow-700">{amountPending.toLocaleString()} €</p>
+          <p className="text-[10px] text-yellow-600 font-bold mt-1">{countPending} demande(s)</p>
         </div>
-        <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-xl">
-          <p className="text-[10px] text-green-600 font-black uppercase tracking-widest">Acceptées</p>
-          <p className="text-xl font-black text-green-700">{filteredExpenses.filter(e => e.status === 'approved' || e.status === 'paid').length}</p>
+        
+        <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-xl shadow-sm">
+          <p className="text-[10px] text-green-600 font-black uppercase tracking-widest">Acceptées / Payées</p>
+          <p className="text-xl font-black text-green-700">{amountApproved.toLocaleString()} €</p>
+          <p className="text-[10px] text-green-600 font-bold mt-1">{countApproved} demande(s)</p>
         </div>
-        <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-xl">
+        
+        <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-xl shadow-sm">
           <p className="text-[10px] text-red-600 font-black uppercase tracking-widest">Refusées</p>
-          <p className="text-xl font-black text-red-700">{filteredExpenses.filter(e => e.status === 'rejected').length}</p>
+          <p className="text-xl font-black text-red-700">{amountRejected.toLocaleString()} €</p>
+          <p className="text-[10px] text-red-600 font-bold mt-1">{countRejected} demande(s)</p>
         </div>
       </div>
-
       {showForm && (
         <div className="bg-white shadow-xl rounded-3xl p-8 border border-blue-100 animate-in fade-in zoom-in duration-200">
           <h3 className="text-xl font-black text-gray-900 mb-6 uppercase tracking-tighter italic">Demande de paiement</h3>
