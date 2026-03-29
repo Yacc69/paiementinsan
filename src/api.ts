@@ -10,19 +10,21 @@ export const fetchApi = async (url: string, options: RequestInit = {}) => {
   const method = options.method ? options.method.toUpperCase() : 'GET';
   let finalUrl = url;
   
-  // Anti-cache uniquement pour GET
   if (method === 'GET') {
     const separator = url.includes('?') ? '&' : '?';
     finalUrl = `${url}${separator}t=${Date.now()}`;
   }
 
-  // 📡 LE RADAR : On annonce ce qui part
   console.log(`🚀 [ENVOI API] ${method} vers ${finalUrl}`);
 
   try {
-    const response = await fetch(finalUrl, { ...options, headers });
+    // ☢️ MODIFICATION ICI : On ajoute cache: 'no-store' pour forcer le téléchargement réel
+    const response = await fetch(finalUrl, { 
+      ...options, 
+      headers,
+      cache: 'no-store' // Interdit formellement le cache
+    });
     
-    // 📡 LE RADAR : On annonce ce qui revient
     console.log(`📦 [RETOUR API] ${method} ${finalUrl} -> Statut HTTP: ${response.status}`);
 
     const data = await response.json().catch(() => null);

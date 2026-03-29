@@ -13,6 +13,15 @@ const app = express();
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// ☢️ L'OPTION NUCLÉAIRE ANTI-CACHE VERCEL ☢️
+// Ce code interdit à Vercel, aux navigateurs et aux proxys de mémoriser les API.
+app.use('/api', (req, res, next) => {
+  res.setHeader('Surrogate-Control', 'no-store');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 
 // --- API Routes ---
 app.use('/api/auth', authRoutes);
