@@ -7,10 +7,18 @@ import {
 } from 'lucide-react';
 
 export default function Admin() {
-  const { user, loading: authLoading } = useAuth(); // 🛡️ MODIF: authLoading ajouté
+  const { user, loading: authLoading } = useAuth();
   const isAdminSupréme = user?.role === 'admin';
-  const [activeTab, setActiveTab] = useState<'users' | 'categories'>(isAdminSupréme ? 'users' : 'categories');
   
+  // 1. On démarre toujours sur categories par précaution
+  const [activeTab, setActiveTab] = useState<'users' | 'categories'>('categories');
+  
+  // 2. 🛡️ LE CORRECTIF EST ICI : Dès que React confirme que tu es Admin Suprême, il bascule de force sur 'users'
+  useEffect(() => {
+    if (isAdminSupréme) {
+      setActiveTab('users');
+    }
+  }, [isAdminSupréme]);
   const [users, setUsers] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

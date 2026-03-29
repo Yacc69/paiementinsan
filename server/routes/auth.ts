@@ -94,15 +94,16 @@ router.get('/users', authenticateToken, async (req: AuthRequest, res) => {
     return res.status(403).json({ error: 'Accès interdit' });
   }
   
-  const { data: users, error } = await supabase
+  // 🛡️ LE CORRECTIF EST ICI : supabaseAdmin + .limit(100000)
+  const { data: users, error } = await supabaseAdmin
     .from('users')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(100000);
 
   if (error) return res.status(500).json({ error: error.message });
   res.json(users);
 });
-
 /**
  * PATCH /users/:id - Modifier rôle
  */
