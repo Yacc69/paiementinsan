@@ -41,8 +41,8 @@ router.post('/login', async (req, res) => {
  * POST /register - Autorise admin ET admin_level_1 à créer des comptes
  */
 router.post('/register', authenticateToken, async (req: AuthRequest, res) => {
-  // CORRECTION : On autorise les deux admins
   const userRole = req.user?.role;
+  // Vérification de sécurité Backend
   if (userRole !== 'admin' && userRole !== 'admin_level_1') {
     return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
   }
@@ -50,6 +50,7 @@ router.post('/register', authenticateToken, async (req: AuthRequest, res) => {
   const { email, password, role, first_name, last_name } = req.body;
 
   try {
+    // 1. Création du compte de connexion (Auth)
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
@@ -60,7 +61,8 @@ router.post('/register', authenticateToken, async (req: AuthRequest, res) => {
     if (authError) throw authError;
 
     if (authData.user) {
-      const { error: dbError } = await supabase
+      // 2. 🛡️ CORRECTION ICI : On utilise supabaseAdmin pour forcer l'écriture dans la table publique !
+      const { error: dbError } = await supabaseAdmin
         .from('users')
         .insert([{ 
           id: authData.user.id, 
@@ -71,12 +73,14 @@ router.post('/register', authenticateToken, async (req: AuthRequest, res) => {
         }]);
       
       if (dbError) {
+        // Si l'insertion échoue, on supprime le compte pour ne pas avoir de "compte fantôme"
         await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
         throw dbError;
       }
     }
     res.status(201).json({ message: 'Utilisateur créé avec succès' });
   } catch (error: any) {
+    console.error("Erreur création utilisateur:", error.message);
     res.status(400).json({ error: error.message });
   }
 });
