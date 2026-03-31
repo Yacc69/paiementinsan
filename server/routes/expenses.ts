@@ -284,4 +284,55 @@ router.patch('/:id/pay', async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * PATCH /:id/reimburse - Marquer comme remboursé (Paiement manuel)
+ */
+router.patch('/:id/reimburse', async (req: AuthRequest, res) => {
+  const { role, email: adminEmail } = req.user!;
+  if (role !== 'admin' && role !== 'admin_level_1') return res.status(403).json({ error: 'Interdit' });
+
+  const { id } = req.params;
+  const { reimbursement_comment, payment_method } = req.body;
+
+  if (!reimbursement_comment || !payment_method) {
+    return res.status(400).json({ error: 'Commentaire et moyen de paiement obligatoires' });
+  }
+
+  try {
+    const { data: expense, error: fetchErr } = await supabaseAdmin
+      .from('expenses')
+      .select('user_id, amount')
+      .eq('id', id)
+      .single();
+
+    if (fetchErr || !expense) return res.status(404).json({ error: "Dépense introuvable" });
+
+    const { error: updErr } = await supabaseAdmin
+      .from('expenses')
+      .update({ 
+        status: 'paid', 
+        reimbursement_comment, 
+        payment_method 
+      })
+      .eq('id', id);
+
+    if (updErr) throw updErr;
+
+    // Notification pour l'employé
+    await supabaseAdmin.from('notifications').insert([{
+      user_id: expense.user_id,
+      title: 'Remboursement effectué 💰',
+      message: `Votre dépense de ${expense.amount}€ a été remboursée par ${payment_method}. Note : ${reimbursement_comment}`,
+      type: 'success',
+      is_read: false
+    }]);
+
+    await notifyAllAdmins("💰 Remboursement validé", `Remboursement de ${expense.amount}€ effectué par ${adminEmail} (${payment_method}).`);
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

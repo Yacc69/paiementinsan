@@ -4,7 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import * as XLSX from 'xlsx'; // IMPORTATION XLSX
 import { 
   Plus, Check, X, Filter, Trash2, Edit2, Save, 
-  Search, CheckSquare, Square, FileText, FileArchive, Image as ImageIcon, Download, FileSpreadsheet, CreditCard, UserPlus
+  Search, CheckSquare, Square, FileText, FileArchive, Image as ImageIcon, 
+  Download, FileSpreadsheet, CreditCard, UserPlus, HandCoins
 } from 'lucide-react';
 
 const getMonthOptions = () => {
@@ -20,6 +21,8 @@ const getMonthOptions = () => {
 };
 
 export default function Expenses() {
+  const [showReimburseModal, setShowReimburseModal] = useState<number | null>(null);
+  const [reimburseData, setReimburseData] = useState({ method: '', comment: '' });
   const [showLendModal, setShowLendModal] = useState<number | null>(null);
   const [lendName, setLendName] = useState('');
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -95,7 +98,7 @@ export default function Expenses() {
     return matchesCategory && matchesMonth && matchesSearch;
   });
 
-// --- CALCULS DES MONTANTS POUR LE BANDEAU ---
+  // --- CALCULS DES MONTANTS POUR LE BANDEAU ---
   const totalFiltered = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
   
   // Les montants
@@ -209,7 +212,8 @@ export default function Expenses() {
       loadData();
     } catch (err: any) { alert(err.message); }
   };
-const handleLendCard = async (e: React.FormEvent) => {
+
+  const handleLendCard = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await fetchApi(`/api/expenses/${showLendModal}/lend-card`, {
@@ -244,6 +248,22 @@ const handleLendCard = async (e: React.FormEvent) => {
     if (base64.includes('application/pdf')) return <FileText size={14} className="text-red-500" />;
     if (base64.includes('image/')) return <ImageIcon size={14} className="text-blue-500" />;
     return <FileArchive size={14} className="text-yellow-600" />;
+  };
+
+  const handleConfirmReimbursement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await fetchApi(`/api/expenses/${showReimburseModal}/reimburse`, {
+        method: 'PATCH',
+        body: JSON.stringify({ 
+          reimbursement_comment: reimburseData.comment, 
+          payment_method: reimburseData.method 
+        })
+      });
+      setShowReimburseModal(null);
+      setReimburseData({ method: '', comment: '' });
+      loadData();
+    } catch (err: any) { alert(err.message); }
   };
 
   // 🛡️ MODIF : LE VERROU DE RENDU ANTI-CLIGNOTEMENT
@@ -302,7 +322,7 @@ const handleLendCard = async (e: React.FormEvent) => {
         </div>
       )}
 
-{/* BANDEAU AVEC LES INFOS DÉTAILLÉES */}
+      {/* BANDEAU AVEC LES INFOS DÉTAILLÉES */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-xl shadow-sm">
           <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest">Total Sélection</p>
@@ -328,6 +348,7 @@ const handleLendCard = async (e: React.FormEvent) => {
           <p className="text-[10px] text-red-600 font-bold mt-1">{countRejected} demande(s)</p>
         </div>
       </div>
+
       {showForm && (
         <div className="bg-white shadow-xl rounded-3xl p-8 border border-blue-100 animate-in fade-in zoom-in duration-200">
           <h3 className="text-xl font-black text-gray-900 mb-6 uppercase tracking-tighter italic">Demande de paiement</h3>
@@ -401,12 +422,13 @@ const handleLendCard = async (e: React.FormEvent) => {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div className="font-black tracking-tighter uppercase">{expense.description || '-'}</div>
                   
-                  {/* NOUVEAU : AFFICHAGE DU MOTIF DE REFUS */}
+                  {/* AFFICHAGE DU MOTIF DE REFUS */}
                   {expense.status === 'rejected' && expense.rejection_comment && (
                     <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded-md text-[10px] text-red-800 font-bold whitespace-normal">
                       Motif du refus : {expense.rejection_comment}
                     </div>
                   )}
+
                   <div className="text-[10px] text-gray-400 font-bold uppercase mt-1 flex flex-wrap gap-2">
                     {(user?.role === 'admin' || user?.role === 'admin_level_1') && (
                       <span className="text-indigo-600">
@@ -423,10 +445,16 @@ const handleLendCard = async (e: React.FormEvent) => {
                         <CreditCard size={12}/> Preuve Paiement
                       </button>
                     )}
-                    {/* NOUVEAU : BADGE CARTE PRÊTÉE */}
+                    {/* BADGE CARTE PRÊTÉE */}
                     {expense.card_lent_to && expense.status === 'approved' && (
                       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-orange-100 text-orange-800 text-[9px] font-black uppercase">
                         💳 Carte prêtée à {expense.card_lent_to}
+                      </span>
+                    )}
+                    {/* BADGE REMBOURSEMENT */}
+                    {expense.payment_method && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-green-100 text-green-800 text-[9px] font-black uppercase">
+                        💰 Remboursé par {expense.payment_method}
                       </span>
                     )}
                   </div>
@@ -450,15 +478,24 @@ const handleLendCard = async (e: React.FormEvent) => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <div className="flex justify-end space-x-2">
-                    {/* NOUVEAU BOUTON : PRÊTER CARTE */}
+                    
+                    {/* BOUTON REMBOURSER (Icône Main avec pièces) */}
+                    {(user?.role === 'admin' || user?.role === 'admin_level_1') && expense.status === 'approved' && !expense.card_lent_to && (
+                      <button onClick={() => setShowReimburseModal(expense.id)} className="text-white bg-green-600 p-1.5 rounded-lg hover:bg-green-700 transition-colors shadow-sm" title="Rembourser manuellement">
+                        <HandCoins size={16} />
+                      </button>
+                    )}
+
+                    {/* BOUTON : PRÊTER CARTE */}
                     {(user?.role === 'admin' || user?.role === 'admin_level_1') && expense.status === 'approved' && !expense.card_lent_to && (
                       <button onClick={() => setShowLendModal(expense.id)} className="text-white bg-orange-500 p-1.5 rounded-lg hover:bg-orange-600 transition-colors shadow-sm" title="Prêter la carte">
                         <UserPlus size={16} />
                       </button>
                     )}
+
                     {/* BOUTON VIREMENT FAIT */}
                     {(user?.role === 'admin' || user?.role === 'admin_level_1') && expense.status === 'approved' && (
-                      <button onClick={() => setShowPayModal(expense.id)} className="text-white bg-indigo-600 p-1.5 rounded-lg hover:bg-indigo-700" title="Marquer comme payé">
+                      <button onClick={() => setShowPayModal(expense.id)} className="text-white bg-indigo-600 p-1.5 rounded-lg hover:bg-indigo-700" title="Marquer comme payé (Virement)">
                         <CreditCard size={16} />
                       </button>
                     )}
@@ -480,6 +517,7 @@ const handleLendCard = async (e: React.FormEvent) => {
                         <Edit2 size={16} />
                       </button>
                     )}
+                    
                     {(user?.role === 'admin' || user?.role === 'admin_level_1') && expense.status === 'pending' && (
                       <>
                         <button onClick={() => handleStatusUpdate(expense.id, 'approved')} className="text-green-600 bg-green-50 p-1.5 rounded-lg hover:bg-green-100 transition-colors" title="Approuver">
@@ -490,6 +528,7 @@ const handleLendCard = async (e: React.FormEvent) => {
                         </button>
                       </>
                     )}
+                    
                     <button onClick={() => handleDelete(expense.id)} className="text-gray-300 hover:text-red-600 p-1.5 transition-colors">
                       <Trash2 size={16} />
                     </button>
@@ -578,7 +617,7 @@ const handleLendCard = async (e: React.FormEvent) => {
         </div>
       )}
 
-      {/* NOUVELLE MODAL : PRÊT DE CARTE */}
+      {/* MODAL : PRÊT DE CARTE */}
       {showLendModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl animate-in zoom-in-95">
@@ -602,7 +641,7 @@ const handleLendCard = async (e: React.FormEvent) => {
         </div>
       )}
 
-      {/* NOUVELLE MODAL : REFUS DE DÉPENSE */}
+      {/* MODAL : REFUS DE DÉPENSE */}
       {showRejectModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
           <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
@@ -620,6 +659,48 @@ const handleLendCard = async (e: React.FormEvent) => {
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => { setShowRejectModal(null); setRejectionComment(''); }} className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors">Annuler</button>
                 <button type="submit" className="flex-1 bg-red-500 text-white py-3 rounded-xl font-black shadow-lg hover:bg-red-600 transition-colors">Confirmer le refus</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL : REMBOURSEMENT MANUEL */}
+      {showReimburseModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-2xl font-black mb-2 uppercase tracking-tighter italic text-green-600">Confirmer le remboursement</h3>
+            <p className="text-sm text-gray-500 mb-6 font-bold">Cette action marquera la dépense comme payée. Les détails ci-dessous sont obligatoires.</p>
+            <form onSubmit={handleConfirmReimbursement} className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Moyen de paiement</label>
+                <select 
+                  required 
+                  value={reimburseData.method} 
+                  onChange={(e) => setReimburseData({...reimburseData, method: e.target.value})}
+                  className="w-full border-2 rounded-xl p-3 outline-none focus:border-green-500 font-bold bg-gray-50"
+                >
+                  <option value="">Sélectionner...</option>
+                  <option value="Espèces">Espèces</option>
+                  <option value="Virement Personnel">Virement Personnel</option>
+                  <option value="Chèque">Chèque</option>
+                  <option value="Autre">Autre</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Commentaire interne / Preuve</label>
+                <textarea 
+                  placeholder="Détails du remboursement (ex: Remis en main propre le...)" 
+                  required 
+                  rows={3}
+                  value={reimburseData.comment} 
+                  onChange={(e) => setReimburseData({...reimburseData, comment: e.target.value})} 
+                  className="w-full border-2 rounded-xl p-3 outline-none focus:border-green-500 font-bold bg-gray-50 resize-none" 
+                />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowReimburseModal(null)} className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors">Annuler</button>
+                <button type="submit" className="flex-1 bg-green-600 text-white py-3 rounded-xl font-black shadow-lg hover:bg-green-700 transition-colors">Valider le remboursement</button>
               </div>
             </form>
           </div>
