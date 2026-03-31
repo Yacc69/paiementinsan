@@ -430,7 +430,7 @@ export default function Expenses() {
                   )}
 
                   <div className="text-[10px] text-gray-400 font-bold uppercase mt-1 flex flex-wrap gap-2">
-                    {(user?.role === 'admin' || user?.role === 'admin_level_1') && (
+                    {(user?.role === 'admin' || user?.role === 'admin_level_1' || user?.role === 'secretary') && (
                       <span className="text-indigo-600">
                         {expense.user_full_name || expense.user_email} • 
                       </span>
@@ -480,27 +480,27 @@ export default function Expenses() {
                   <div className="flex justify-end space-x-2">
                     
                     {/* BOUTON REMBOURSER (Icône Main avec pièces) */}
-                    {(user?.role === 'admin' || user?.role === 'admin_level_1') && expense.status === 'approved' && !expense.card_lent_to && (
+                    {(user?.role === 'admin' || user?.role === 'admin_level_1' || user?.role === 'secretary') && expense.status === 'approved' && !expense.card_lent_to && (
                       <button onClick={() => setShowReimburseModal(expense.id)} className="text-white bg-green-600 p-1.5 rounded-lg hover:bg-green-700 transition-colors shadow-sm" title="Rembourser manuellement">
                         <HandCoins size={16} />
                       </button>
                     )}
 
                     {/* BOUTON : PRÊTER CARTE */}
-                    {(user?.role === 'admin' || user?.role === 'admin_level_1') && expense.status === 'approved' && !expense.card_lent_to && (
+                    {(user?.role === 'admin' || user?.role === 'admin_level_1' || user?.role === 'secretary') && expense.status === 'approved' && !expense.card_lent_to && (
                       <button onClick={() => setShowLendModal(expense.id)} className="text-white bg-orange-500 p-1.5 rounded-lg hover:bg-orange-600 transition-colors shadow-sm" title="Prêter la carte">
                         <UserPlus size={16} />
                       </button>
                     )}
 
                     {/* BOUTON VIREMENT FAIT */}
-                    {(user?.role === 'admin' || user?.role === 'admin_level_1') && expense.status === 'approved' && (
+                    {(user?.role === 'admin' || user?.role === 'admin_level_1' || user?.role === 'secretary') && expense.status === 'approved' && (
                       <button onClick={() => setShowPayModal(expense.id)} className="text-white bg-indigo-600 p-1.5 rounded-lg hover:bg-indigo-700" title="Marquer comme payé (Virement)">
                         <CreditCard size={16} />
                       </button>
                     )}
 
-                    {(user?.role === 'admin' || user?.role === 'admin_level_1') && (
+                    {(user?.role === 'admin' || user?.role === 'admin_level_1' || user?.role === 'secretary') && (
                       <button 
                         onClick={() => {
                           setEditData({
@@ -518,7 +518,7 @@ export default function Expenses() {
                       </button>
                     )}
                     
-                    {(user?.role === 'admin' || user?.role === 'admin_level_1') && expense.status === 'pending' && (
+                    {(user?.role === 'admin' || user?.role === 'admin_level_1' || user?.role === 'secretary') && expense.status === 'pending' && (
                       <>
                         <button onClick={() => handleStatusUpdate(expense.id, 'approved')} className="text-green-600 bg-green-50 p-1.5 rounded-lg hover:bg-green-100 transition-colors" title="Approuver">
                           <Check size={16} />

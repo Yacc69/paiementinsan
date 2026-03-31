@@ -55,7 +55,7 @@ router.get('/', async (req: AuthRequest, res) => {
       .limit(100000); // <-- CORRECTION : Plafond cassé pour TOUT LE MONDE
 
     // Filtrage pour les requesters (ils ne voient que leurs propres dépenses)
-    if (role !== 'admin' && role !== 'admin_level_1') {
+    if (role !== 'admin' && role !== 'admin_level_1' && role !== 'secretary') {
       expQuery = expQuery.eq('user_id', userId);
     }
     
@@ -133,7 +133,7 @@ router.get('/comparison', async (req: AuthRequest, res) => {
         .lt('date', end)
         .limit(100000); // <-- CORRECTION : Plafond cassé ici aussi
 
-      if (role !== 'admin' && role !== 'admin_level_1') query = query.eq('user_id', userId);
+      if (role !== 'admin' && role !== 'admin_level_1' && role !== 'secretary') query = query.eq('user_id', userId);
       if (categoryIds && type === 'category') query = query.in('category_id', (categoryIds as string).split(',').map(Number));
 
       const { data: expenses } = await query;

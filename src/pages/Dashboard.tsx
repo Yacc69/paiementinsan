@@ -44,7 +44,8 @@ export default function Dashboard() {
   const [comparisonData, setComparisonData] = useState<any>(null);
   const [isComparing, setIsComparing] = useState(false);
 
-  const isManager = user?.role === 'admin' || user?.role === 'admin_level_1';
+  const canSeeAllExpenses = user?.role === 'admin' || user?.role === 'admin_level_1' || user?.role === 'secretary';
+  const canSeePayroll = user?.role === 'admin' || user?.role === 'admin_level_1';
 
 const loadData = async () => {
     // 🛡️ MODIF : Ne met en chargement total que si on n'a AUCUNE stat
@@ -105,7 +106,7 @@ const loadData = async () => {
 
   const distributionData = stats ? [
     ...stats.expensesByCategory,
-    ...(isManager ? [{ name: 'Masse Salariale', total: stats.totalPayroll }] : [])
+    ...(canSeePayroll ? [{ name: 'Masse Salariale', total: stats.totalPayroll }] : [])
   ] : [];
 
   // 🛡️ MODIF : LE VERROU DE FLUIDITÉ
@@ -136,17 +137,17 @@ const loadData = async () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-500 flex items-center gap-4">
           <div className="p-3 bg-blue-50 rounded-lg"><Receipt className="text-blue-600" /></div>
-          <div><p className="text-xs font-bold text-gray-400 uppercase tracking-widest">{isManager ? 'Dépenses Entreprise' : 'Mes Dépenses'}</p><p className="text-2xl font-black text-gray-800">{stats?.totalExpenses.toLocaleString()} €</p></div>
+          <div><p className="text-xs font-bold text-gray-400 uppercase tracking-widest">{canSeeAllExpenses ? 'Dépenses Entreprise' : 'Mes Dépenses'}</p><p className="text-2xl font-black text-gray-800">{stats?.totalExpenses.toLocaleString()} €</p></div>
         </div>
         
-        {isManager && (
+        {canSeePayroll && (
           <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500 flex items-center gap-4">
             <div className="p-3 bg-green-50 rounded-lg"><Users className="text-green-600" /></div>
             <div><p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Masse Salariale</p><p className="text-2xl font-black text-gray-800">{stats?.totalPayroll.toLocaleString()} €</p></div>
           </div>
         )}
 
-        {isManager && (
+        {canSeeAllExpenses && (
           <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-indigo-500 flex items-center gap-4">
             <div className="p-3 bg-indigo-50 rounded-lg"><TrendingUp className="text-indigo-600" /></div>
             <div><p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Réel</p><p className="text-2xl font-black text-gray-800">{(stats ? stats.totalExpenses + stats.totalPayroll : 0).toLocaleString()} €</p></div>
@@ -158,9 +159,9 @@ const loadData = async () => {
         <div className="flex flex-col lg:flex-row justify-between items-center gap-4 mb-6">
           <h3 className="text-lg font-bold flex items-center gap-2"><Calendar className="text-indigo-500" /> Analyse Comparative</h3>
           <div className="flex gap-2 bg-gray-100 p-1 rounded-xl">
-            <button onClick={() => setComparisonType('total')} className={`px-4 py-2 rounded-lg text-xs font-bold ${comparisonType === 'total' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>{isManager ? 'Total Réel' : 'Vue Globale'}</button>
+            <button onClick={() => setComparisonType('total')} className={`px-4 py-2 rounded-lg text-xs font-bold ${comparisonType === 'total' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>{canSeeAllExpenses ? 'Total Réel' : 'Vue Globale'}</button>
             <button onClick={() => setComparisonType('category')} className={`px-4 py-2 rounded-lg text-xs font-bold ${comparisonType === 'category' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>Par Famille</button>
-            {isManager && (
+            {canSeePayroll && (
               <button onClick={() => setComparisonType('payroll')} className={`px-4 py-2 rounded-lg text-xs font-bold ${comparisonType === 'payroll' ? 'bg-white shadow text-green-600' : 'text-gray-500'}`}>Salaires</button>
             )}
           </div>
@@ -211,7 +212,7 @@ const loadData = async () => {
               <TrendingUp className="text-indigo-600 mb-3 mx-auto" size={32} />
               <h4 className="font-black text-gray-800 text-lg uppercase tracking-tight">Analyse de Performance</h4>
               <p className="text-sm text-gray-600 mt-3 leading-relaxed font-medium">
-                {isManager ? 
+                {canSeeAllExpenses ? 
                  "Vous accédez à la vue complète incluant les charges de personnel et les dépenses opérationnelles globales." : 
                  "Vous suivez ici l'évolution de vos demandes de frais personnels approuvées."}
               </p>

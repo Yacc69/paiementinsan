@@ -191,6 +191,7 @@ export default function Admin() {
                     >
                       <option value="requester">Requester</option>
                       <option value="admin_level_1">Admin Level 1</option>
+                      <option value="secretary">Secrétaire</option>
                       <option value="admin">Admin Suprême</option>
                     </select>
                   </td>
@@ -260,6 +261,7 @@ export default function Admin() {
               <select className="w-full border-2 rounded-xl p-3 font-bold bg-white" 
                 onChange={(e) => setNewUser({...newUser, role: e.target.value})}>
                 <option value="requester">Collaborateur (Requester)</option>
+                <option value="secretary">Secrétaire</option>
                 <option value="admin_level_1">Manager (Admin Level 1)</option>
                 <option value="admin">Administrateur (Admin)</option>
               </select>

@@ -21,7 +21,7 @@ async function notifyAllAdmins(title: string, message: string) {
       return;
     }
 
-    const adminList = admins?.filter(u => u.role === 'admin' || u.role === 'admin_level_1') || [];
+    const adminList = admins?.filter(u => u.role === 'admin' || u.role === 'admin_level_1' || u.role === 'secretary') || [];
     
     if (adminList.length > 0) {
       const notifications = adminList.map(adm => ({
@@ -59,7 +59,7 @@ router.get('/', async (req: AuthRequest, res) => {
     `)
     .limit(100000);
 
-  if (role !== 'admin' && role !== 'admin_level_1') {
+  if (role !== 'admin' && role !== 'admin_level_1' && role !== 'secretary') {
     query = query.eq('user_id', id);
   }
 
@@ -121,7 +121,7 @@ router.post('/', async (req: AuthRequest, res) => {
  */
 router.patch('/:id/status', async (req: AuthRequest, res) => {
   const { role, id: adminId, email: adminEmail } = req.user!;
-  if (role !== 'admin' && role !== 'admin_level_1') return res.status(403).json({ error: 'Interdit' });
+  if (role !== 'admin' && role !== 'admin_level_1' && role !== 'secretary') return res.status(403).json({ error: 'Interdit' });
   
   const { status, rejection_comment } = req.body;
   const { id } = req.params;
@@ -193,7 +193,8 @@ router.delete('/:id', async (req: AuthRequest, res) => {
  * PATCH /:id - Admin modifie une dépense (Montant, Famille, Sous-famille)
  */
 router.patch('/:id', async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'admin' && req.user?.role !== 'admin_level_1') {
+  // 🛡️ CORRECTION ICI : req.user?.role au lieu de role tout seul
+  if (req.user?.role !== 'admin' && req.user?.role !== 'admin_level_1' && req.user?.role !== 'secretary') {
     return res.status(403).json({ error: 'Action réservée aux admins' });
   }
 
@@ -215,12 +216,13 @@ router.patch('/:id', async (req: AuthRequest, res) => {
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });
+
 /**
  * PATCH /:id/lend-card - Indiquer que la carte est prêtée
  */
 router.patch('/:id/lend-card', async (req: AuthRequest, res) => {
   const { role } = req.user!;
-  if (role !== 'admin' && role !== 'admin_level_1') return res.status(403).json({ error: 'Interdit' });
+  if (role !== 'admin' && role !== 'admin_level_1' && role !== 'secretary') return res.status(403).json({ error: 'Interdit' });
 
   const { id } = req.params;
   const { card_lent_to } = req.body;
@@ -237,12 +239,13 @@ router.patch('/:id/lend-card', async (req: AuthRequest, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 /**
  * PATCH /:id/pay - Confirmer le paiement avec preuve + Notification Employé
  */
 router.patch('/:id/pay', async (req: AuthRequest, res) => {
   const { role, email: adminEmail } = req.user!;
-  if (role !== 'admin' && role !== 'admin_level_1') return res.status(403).json({ error: 'Interdit' });
+  if (role !== 'admin' && role !== 'admin_level_1' && role !== 'secretary') return res.status(403).json({ error: 'Interdit' });
 
   const { id } = req.params;
   const { payment_proof } = req.body;
@@ -289,7 +292,7 @@ router.patch('/:id/pay', async (req: AuthRequest, res) => {
  */
 router.patch('/:id/reimburse', async (req: AuthRequest, res) => {
   const { role, email: adminEmail } = req.user!;
-  if (role !== 'admin' && role !== 'admin_level_1') return res.status(403).json({ error: 'Interdit' });
+  if (role !== 'admin' && role !== 'admin_level_1' && role !== 'secretary') return res.status(403).json({ error: 'Interdit' });
 
   const { id } = req.params;
   const { reimbursement_comment, payment_method } = req.body;

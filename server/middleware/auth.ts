@@ -51,7 +51,7 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
 // --- RÈGLES DE SÉCURITÉ SUPPLÉMENTAIRES ---
 
 export const requireAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
-  if (req.user?.role !== 'admin' && req.user?.role !== 'admin_level_1') {
+  if (req.user?.role !== 'admin' && req.user?.role !== 'admin_level_1' && req.user?.role !== 'secretary') {
     return res.status(403).json({ error: 'Action réservée aux administrateurs' });
   }
   next();
