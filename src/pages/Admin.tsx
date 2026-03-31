@@ -10,15 +10,14 @@ export default function Admin() {
   const { user, loading: authLoading } = useAuth();
   const isAdminSupréme = user?.role === 'admin';
   
-  // 1. On démarre toujours sur categories par précaution
   const [activeTab, setActiveTab] = useState<'users' | 'categories'>('categories');
   
-  // 2. 🛡️ LE CORRECTIF EST ICI : Dès que React confirme que tu es Admin Suprême, il bascule de force sur 'users'
   useEffect(() => {
     if (isAdminSupréme) {
       setActiveTab('users');
     }
   }, [isAdminSupréme]);
+  
   const [users, setUsers] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,6 +26,12 @@ export default function Admin() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCatModal, setShowCatModal] = useState(false);
   const [showSubCatModal, setShowSubCatModal] = useState(false);
+  
+  // NOUVEAUX ÉTATS POUR L'ÉDITION DES CATÉGORIES
+  const [showEditCatModal, setShowEditCatModal] = useState(false);
+  const [showEditSubCatModal, setShowEditSubCatModal] = useState(false);
+  const [editCat, setEditCat] = useState({ id: '', name: '' });
+  const [editSubCat, setEditSubCat] = useState({ id: '', name: '', category_id: '' });
 
   const [newUser, setNewUser] = useState({ email: '', password: '', role: 'requester', first_name: '', last_name: '' });
   const [editUser, setEditUser] = useState({ id: '', first_name: '', last_name: '' });
@@ -34,7 +39,7 @@ export default function Admin() {
   const [newSubCat, setNewSubCat] = useState({ name: '', category_id: '' });
 
   const loadData = async () => {
-    if (categories.length === 0 && (!isAdminSupréme || users.length === 0)) setLoading(true); // 🛡️ Ne charge qu'au premier coup
+    if (categories.length === 0 && (!isAdminSupréme || users.length === 0)) setLoading(true);
     try {
       const promises = [fetchApi('/api/categories')];
       if (isAdminSupréme) promises.push(fetchApi('/api/auth/users'));
@@ -47,8 +52,9 @@ export default function Admin() {
 
   useEffect(() => { 
     if (!authLoading && user) loadData(); 
-  }, [user, authLoading]); // 🛡️ MODIF: on attend authLoading
+  }, [user, authLoading]);
 
+  // --- GESTION UTILISATEURS ---
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -62,10 +68,7 @@ export default function Admin() {
   const handleUpdateUserProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await fetchApi(`/api/auth/users/${editUser.id}/profile`, { 
-        method: 'PATCH', 
-        body: JSON.stringify({ first_name: editUser.first_name, last_name: editUser.last_name }) 
-      });
+      await fetchApi(`/api/auth/users/${editUser.id}/profile`, { method: 'PATCH', body: JSON.stringify({ first_name: editUser.first_name, last_name: editUser.last_name }) });
       setShowEditModal(false);
       loadData();
     } catch (err: any) { alert(err.message); }
@@ -86,12 +89,22 @@ export default function Admin() {
     } catch (err: any) { alert(err.message); }
   };
 
+  // --- GESTION FAMILLES ---
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await fetchApi('/api/categories', { method: 'POST', body: JSON.stringify(newCat) });
       setShowCatModal(false);
       setNewCat({ name: '' });
+      loadData();
+    } catch (err: any) { alert(err.message); }
+  };
+
+  const handleEditCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await fetchApi(`/api/categories/${editCat.id}`, { method: 'PATCH', body: JSON.stringify({ name: editCat.name }) });
+      setShowEditCatModal(false);
       loadData();
     } catch (err: any) { alert(err.message); }
   };
@@ -104,12 +117,22 @@ export default function Admin() {
     } catch (err: any) { alert("Erreur : La famille contient probablement des sous-familles ou des dépenses."); }
   };
 
+  // --- GESTION SOUS-FAMILLES ---
   const handleAddSubCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await fetchApi('/api/categories/sub', { method: 'POST', body: JSON.stringify(newSubCat) });
       setShowSubCatModal(false);
       setNewSubCat({ name: '', category_id: '' });
+      loadData();
+    } catch (err: any) { alert(err.message); }
+  };
+
+  const handleEditSubCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await fetchApi(`/api/categories/sub/${editSubCat.id}`, { method: 'PATCH', body: JSON.stringify({ name: editSubCat.name, category_id: editSubCat.category_id }) });
+      setShowEditSubCatModal(false);
       loadData();
     } catch (err: any) { alert(err.message); }
   };
@@ -122,7 +145,6 @@ export default function Admin() {
     } catch (err: any) { alert(err.message); }
   };
 
-  // 🛡️ MODIF : LE VERROU DE FLUIDITÉ
   if (authLoading || (loading && categories.length === 0)) {
     return (
       <div className="flex h-[60vh] flex-col items-center justify-center">
@@ -189,10 +211,10 @@ export default function Admin() {
                       onChange={(e) => handleRoleChange(u.id, e.target.value)}
                       className="text-xs font-black border rounded-lg p-1.5 bg-gray-50 outline-none focus:ring-2 focus:ring-indigo-500 uppercase tracking-tighter"
                     >
-                      <option value="requester">Requester</option>
-                      <option value="admin_level_1">Admin Level 1</option>
-                      <option value="secretary">Secrétaire</option>
-                      <option value="admin">Admin Suprême</option>
+                      <option value="requester">Collaborateur (Requester)</option>
+                      <option value="secretary">Secrétaire (Dépenses uniquement)</option>
+                      <option value="admin_level_1">Manager (Admin Level 1)</option>
+                      <option value="admin">Administrateur (Admin)</option>
                     </select>
                   </td>
                   <td className="px-6 py-4 text-right">
@@ -220,7 +242,10 @@ export default function Admin() {
               <div key={cat.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
                 <div className="flex justify-between items-center mb-4">
                   <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600"><Layers size={20}/></div>
-                  <button onClick={() => handleDeleteCategory(cat.id)} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
+                  <div className="flex gap-2">
+                    <button onClick={() => { setEditCat({ id: cat.id, name: cat.name }); setShowEditCatModal(true); }} className="text-gray-300 hover:text-blue-500 transition-colors"><Edit2 size={16}/></button>
+                    <button onClick={() => handleDeleteCategory(cat.id)} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
+                  </div>
                 </div>
                 <h4 className="text-lg font-black text-gray-800 mb-3">{cat.name}</h4>
                 <div className="space-y-2">
@@ -229,7 +254,10 @@ export default function Admin() {
                     cat.sub_categories.map((sub: any) => (
                       <div key={sub.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-xs font-bold text-gray-600 group">
                         <span className="flex items-center gap-2"><ChevronRight size={14} className="text-indigo-400" /> {sub.name}</span>
-                        <button onClick={() => handleDeleteSubCategory(sub.id)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><X size={14}/></button>
+                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                          <button onClick={() => { setEditSubCat({ id: sub.id, name: sub.name, category_id: sub.category_id }); setShowEditSubCatModal(true); }} className="text-gray-300 hover:text-blue-500"><Edit2 size={14}/></button>
+                          <button onClick={() => handleDeleteSubCategory(sub.id)} className="text-gray-300 hover:text-red-500"><X size={14}/></button>
+                        </div>
                       </div>
                     ))
                   ) : (
@@ -242,9 +270,9 @@ export default function Admin() {
         </div>
       )}
 
-      {/* --- MODALS --- */}
+      {/* --- MODALS UTILISATEURS (Existantes) --- */}
       {showUserModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
           <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
             <h3 className="text-2xl font-black mb-6 italic tracking-tighter uppercase">Ajouter un membre</h3>
             <form onSubmit={handleAddUser} className="space-y-4">
@@ -261,7 +289,7 @@ export default function Admin() {
               <select className="w-full border-2 rounded-xl p-3 font-bold bg-white" 
                 onChange={(e) => setNewUser({...newUser, role: e.target.value})}>
                 <option value="requester">Collaborateur (Requester)</option>
-                <option value="secretary">Secrétaire</option>
+                <option value="secretary">Secrétaire (Dépenses uniquement)</option>
                 <option value="admin_level_1">Manager (Admin Level 1)</option>
                 <option value="admin">Administrateur (Admin)</option>
               </select>
@@ -275,7 +303,7 @@ export default function Admin() {
       )}
 
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
           <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
             <h3 className="text-2xl font-black mb-6 italic tracking-tighter uppercase">Éditer le profil</h3>
             <form onSubmit={handleUpdateUserProfile} className="space-y-4">
@@ -302,8 +330,9 @@ export default function Admin() {
         </div>
       )}
 
+      {/* --- MODALS FAMILLES --- */}
       {showCatModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl animate-in zoom-in-95">
             <h3 className="text-2xl font-black mb-6 italic tracking-tighter uppercase">Nouvelle Famille</h3>
             <form onSubmit={handleAddCategory} className="space-y-4">
@@ -318,8 +347,25 @@ export default function Admin() {
         </div>
       )}
 
+      {showEditCatModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-2xl font-black mb-6 italic tracking-tighter uppercase">Modifier la Famille</h3>
+            <form onSubmit={handleEditCategory} className="space-y-4">
+              <input type="text" required value={editCat.name} className="w-full border-2 rounded-xl p-3 outline-none focus:border-indigo-500 font-bold" 
+                onChange={(e) => setEditCat({ ...editCat, name: e.target.value })} />
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowEditCatModal(false)} className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors">Annuler</button>
+                <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg flex items-center justify-center gap-2"><Save size={16}/> Enregistrer</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODALS SOUS-FAMILLES --- */}
       {showSubCatModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl animate-in zoom-in-95">
             <h3 className="text-2xl font-black mb-6 italic tracking-tighter uppercase">Nouvelle Sous-Famille</h3>
             <form onSubmit={handleAddSubCategory} className="space-y-4">
@@ -333,6 +379,26 @@ export default function Admin() {
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => setShowSubCatModal(false)} className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors">Annuler</button>
                 <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg">Créer</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showEditSubCatModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-2xl font-black mb-6 italic tracking-tighter uppercase">Modifier la Sous-Famille</h3>
+            <form onSubmit={handleEditSubCategory} className="space-y-4">
+              <select required value={editSubCat.category_id} className="w-full border-2 rounded-xl p-3 font-bold bg-white outline-none focus:border-indigo-500" 
+                onChange={(e) => setEditSubCat({...editSubCat, category_id: e.target.value})}>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <input type="text" required value={editSubCat.name} className="w-full border-2 rounded-xl p-3 outline-none focus:border-indigo-500 font-bold" 
+                onChange={(e) => setEditSubCat({ ...editSubCat, name: e.target.value })} />
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowEditSubCatModal(false)} className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors">Annuler</button>
+                <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black shadow-lg flex items-center justify-center gap-2"><Save size={16}/> Enregistrer</button>
               </div>
             </form>
           </div>

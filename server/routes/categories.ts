@@ -8,9 +8,7 @@ const router = express.Router();
 router.use(authenticateToken);
 
 /**
- * GET /
- * Récupère toutes les catégories avec leurs sous-catégories
- * Accessible par tous les utilisateurs connectés
+ * GET / - Récupère toutes les catégories avec leurs sous-catégories
  */
 router.get('/', async (req: AuthRequest, res) => {
   const { data: categories, error } = await supabaseAdmin
@@ -25,91 +23,77 @@ router.get('/', async (req: AuthRequest, res) => {
       )
     `)
     .order('name', { ascending: true })
-    .limit(1000); // 1000 familles max, largement suffisant
+    .limit(1000);
 
-  if (error) {
-    console.error("Erreur récupération categories:", error);
-    return res.status(500).json({ error: error.message });
-  }
-  
+  if (error) return res.status(500).json({ error: error.message });
   res.json(categories);
 });
 
 /**
- * POST /
- * Ajouter une famille (catégorie)
- * Accessible par Admin et Admin_Level_1 via requireAdmin
+ * POST / - Ajouter une famille (Admin, Manager, Secrétaire)
  */
 router.post('/', requireAdmin, async (req: AuthRequest, res) => {
   const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'Le nom est requis' });
 
-  if (!name) {
-    return res.status(400).json({ error: 'Le nom de la famille est requis' });
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from('categories')
-    .insert([{ name }])
-    .select()
-    .single();
-
-  if (error) {
-    console.error("Erreur insertion catégorie:", error);
-    return res.status(400).json({ error: 'La catégorie existe déjà ou les données sont invalides' });
-  }
-
+  const { data, error } = await supabaseAdmin.from('categories').insert([{ name }]).select().single();
+  if (error) return res.status(400).json({ error: 'La catégorie existe déjà.' });
   res.status(201).json(data);
 });
 
 /**
- * POST /sub
- * Ajouter une sous-famille (sous-catégorie)
- * Accessible par Admin et Admin_Level_1 via requireAdmin
+ * POST /sub - Ajouter une sous-famille
  */
 router.post('/sub', requireAdmin, async (req: AuthRequest, res) => {
   const { category_id, name } = req.body;
+  if (!category_id || !name) return res.status(400).json({ error: 'ID et nom requis' });
 
-  if (!category_id || !name) {
-    return res.status(400).json({ error: 'L’ID de catégorie (famille) et le nom sont requis' });
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from('sub_categories')
-    .insert([{ category_id, name }])
-    .select()
-    .single();
-
-  if (error) {
-    console.error("Erreur insertion sous-catégorie:", error);
-    return res.status(400).json({ error: 'La sous-catégorie existe déjà pour cette famille ou les données sont invalides' });
-  }
-
+  const { data, error } = await supabaseAdmin.from('sub_categories').insert([{ category_id, name }]).select().single();
+  if (error) return res.status(400).json({ error: 'La sous-catégorie existe déjà.' });
   res.status(201).json(data);
+});
+
+/**
+ * PATCH /:id - Modifier une Famille
+ */
+router.patch('/:id', requireAdmin, async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  const { name } = req.body;
+
+  const { data, error } = await supabaseAdmin.from('categories').update({ name }).eq('id', id).select().single();
+  if (error) return res.status(400).json({ error: "Erreur lors de la modification." });
+  res.json(data);
+});
+
+/**
+ * PATCH /sub/:id - Modifier une Sous-Famille
+ */
+router.patch('/sub/:id', requireAdmin, async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  const { name, category_id } = req.body;
+
+  const { data, error } = await supabaseAdmin.from('sub_categories').update({ name, category_id }).eq('id', id).select().single();
+  if (error) return res.status(400).json({ error: "Erreur lors de la modification." });
+  res.json(data);
 });
 
 /**
  * DELETE /:id - Supprimer une Famille
  */
-router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'admin' && req.user?.role !== 'admin_level_1') return res.status(403).json({ error: 'Interdit' });
+router.delete('/:id', requireAdmin, async (req: AuthRequest, res) => {
   const { id } = req.params;
-
   const { error } = await supabaseAdmin.from('categories').delete().eq('id', id);
   if (error) return res.status(400).json({ error: "Impossible de supprimer : vérifiez que la famille est vide." });
-
   res.json({ success: true });
 });
 
 /**
  * DELETE /sub/:id - Supprimer une Sous-Famille
  */
-router.delete('/sub/:id', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'admin' && req.user?.role !== 'admin_level_1') return res.status(403).json({ error: 'Interdit' });
+router.delete('/sub/:id', requireAdmin, async (req: AuthRequest, res) => {
   const { id } = req.params;
-
   const { error } = await supabaseAdmin.from('sub_categories').delete().eq('id', id);
   if (error) return res.status(400).json({ error: "Erreur lors de la suppression." });
-
   res.json({ success: true });
 });
 

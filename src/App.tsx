@@ -27,15 +27,15 @@ const PrivateRoute = ({ children, adminOnly = false, superAdminOnly = false }: {
   // 2. Si non connecté -> Login
   if (!user) return <Navigate to="/login" replace />;
   
-  // 3. LOGIQUE DE RESTRICTION (Stricte comme tu le souhaites)
+  // 3. LOGIQUE DE RESTRICTION
   
   // Si la page demande Super Admin et qu'on ne l'est pas
   if (superAdminOnly && user.role !== 'admin') {
     return <Navigate to="/" replace />;
   }
 
-  // Si la page demande Admin (Level 1 ou Super) et qu'on n'est ni l'un ni l'autre
-  const isAnyAdmin = user.role === 'admin' || user.role === 'admin_level_1';
+  // 🛡️ MODIF ICI : On ajoute 'secretary' pour lui donner accès aux routes adminOnly
+  const isAnyAdmin = user.role === 'admin' || user.role === 'admin_level_1' || user.role === 'secretary';
   if (adminOnly && !isAnyAdmin) {
     return <Navigate to="/" replace />;
   }

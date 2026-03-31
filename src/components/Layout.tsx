@@ -23,7 +23,8 @@ export default function Layout() {
     navItems.push({ name: 'Masse Salariale', path: '/payroll', icon: Users });
   }
 
-  if (user?.role === 'admin' || user?.role === 'admin_level_1') {
+  // 🛡️ MODIF ICI : On ajoute 'secretary' pour afficher le bouton Administration
+  if (user?.role === 'admin' || user?.role === 'admin_level_1' || user?.role === 'secretary') {
     navItems.push({ name: 'Administration', path: '/admin', icon: Settings });
   }
 
