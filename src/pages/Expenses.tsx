@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { fetchApi } from '../api';
 import { useAuth } from '../context/AuthContext';
-import * as XLSX from 'xlsx'; // IMPORTATION XLSX
+import * as XLSX from 'xlsx';
 import { 
   Plus, Check, X, Filter, Trash2, Edit2, Save, 
   Search, CheckSquare, Square, FileText, FileArchive, Image as ImageIcon, 
-  Download, FileSpreadsheet, CreditCard, UserPlus, HandCoins
+  Download, FileSpreadsheet, CreditCard, UserPlus, HandCoins, Camera, Aperture
 } from 'lucide-react';
 
 const getMonthOptions = () => {
@@ -30,7 +30,7 @@ export default function Expenses() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showPayModal, setShowPayModal] = useState<number | null>(null); // ÉTAT MODAL PAIEMENT
+  const [showPayModal, setShowPayModal] = useState<number | null>(null);
   const [showRejectModal, setShowRejectModal] = useState<number | null>(null);
   const [rejectionComment, setRejectionComment] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
@@ -38,9 +38,13 @@ export default function Expenses() {
   const [searchQuery, setSearchQuery] = useState(''); 
   const [selectedIds, setSelectedIds] = useState<number[]>([]); 
   const [previewFile, setPreviewFile] = useState<string | null>(null);
-  const [paymentProof, setPaymentProof] = useState(''); // ÉTAT PREUVE VIREMENT
+  const [paymentProof, setPaymentProof] = useState('');
   
-  // 🛡️ MODIF : On récupère authLoading
+  // --- ÉTATS POUR L'APPAREIL PHOTO INTÉGRÉ ---
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [cameraTarget, setCameraTarget] = useState<'attachment' | 'paymentProof' | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  
   const { user, loading: authLoading } = useAuth();
 
   const [formData, setFormData] = useState({
@@ -61,9 +65,7 @@ export default function Expenses() {
   });
 
   const loadData = async () => {
-    // 🛡️ MODIF : On ne met loading à true que si c'est le tout premier chargement
     if (expenses.length === 0) setLoading(true);
-    
     try {
       const [expensesData, categoriesData] = await Promise.all([
         fetchApi('/api/expenses'),
@@ -79,13 +81,59 @@ export default function Expenses() {
     }
   };
 
-  // 🛡️ MODIF : On attend la sécurité Supabase
   useEffect(() => {
     if (!authLoading && user) {
       loadData();
     }
   }, [user, authLoading]);
 
+  // --- LOGIQUE APPAREIL PHOTO UNIVERSEL ---
+  const openCamera = async (target: 'attachment' | 'paymentProof') => {
+    setCameraTarget(target);
+    setIsCameraOpen(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment' } // Préfère la caméra arrière sur mobile, webcam sur PC
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      alert("Impossible d'accéder à la caméra. Vérifiez les autorisations de votre navigateur.");
+      setIsCameraOpen(false);
+    }
+  };
+
+  const closeCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop()); // Coupe la caméra
+    }
+    setIsCameraOpen(false);
+    setCameraTarget(null);
+  };
+
+  const takePhoto = () => {
+    if (videoRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8); // Qualité 80%
+        
+        if (cameraTarget === 'attachment') {
+          setFormData({ ...formData, attachment: dataUrl });
+        } else if (cameraTarget === 'paymentProof') {
+          setPaymentProof(dataUrl);
+        }
+      }
+    }
+    closeCamera();
+  };
+
+  // --- LOGIQUES EXISTANTES ---
   const filteredExpenses = expenses.filter(e => {
     const matchesCategory = !filterCategory || e.category_id.toString() === filterCategory;
     const matchesMonth = !filterMonth || (e.date && e.date.substring(0, 7) === filterMonth);
@@ -98,20 +146,14 @@ export default function Expenses() {
     return matchesCategory && matchesMonth && matchesSearch;
   });
 
-  // --- CALCULS DES MONTANTS POUR LE BANDEAU ---
   const totalFiltered = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
-  
-  // Les montants
   const amountPending = filteredExpenses.filter(e => e.status === 'pending').reduce((sum, e) => sum + e.amount, 0);
   const amountApproved = filteredExpenses.filter(e => e.status === 'approved' || e.status === 'paid').reduce((sum, e) => sum + e.amount, 0);
   const amountRejected = filteredExpenses.filter(e => e.status === 'rejected').reduce((sum, e) => sum + e.amount, 0);
-
-  // Les compteurs (pour garder l'info du nombre de requêtes)
   const countPending = filteredExpenses.filter(e => e.status === 'pending').length;
   const countApproved = filteredExpenses.filter(e => e.status === 'approved' || e.status === 'paid').length;
   const countRejected = filteredExpenses.filter(e => e.status === 'rejected').length;
 
-  // --- LOGIQUE EXPORT EXCEL ---
   const handleExportExcel = () => {
     const dataToExport = filteredExpenses.map(e => ({
       'DATE': new Date(e.date).toLocaleDateString('fr-FR'),
@@ -182,15 +224,12 @@ export default function Expenses() {
   };
 
   const handleStatusUpdate = async (id: number, status: 'approved' | 'rejected', comment?: string) => {
-    // Si on approuve, on demande confirmation classique. Si on rejette, la modale s'en charge.
     if (status === 'approved' && !confirm(`Voulez-vous vraiment approuver cette dépense ?`)) return;
-    
     try {
       await fetchApi(`/api/expenses/${id}/status`, { 
         method: 'PATCH', 
         body: JSON.stringify({ status, rejection_comment: comment }) 
       });
-      
       if (status === 'rejected') {
         setShowRejectModal(null);
         setRejectionComment('');
@@ -199,7 +238,6 @@ export default function Expenses() {
     } catch (err: any) { alert(err.message); }
   };
 
-  // NOUVELLE FONCTION PAIEMENT
   const handleConfirmPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -242,14 +280,6 @@ export default function Expenses() {
     } catch (err: any) { alert(err.message); }
   };
 
-  const selectedCategory = categories.find(c => c.id.toString() === formData.category_id);
-
-  const getFileIcon = (base64: string) => {
-    if (base64.includes('application/pdf')) return <FileText size={14} className="text-red-500" />;
-    if (base64.includes('image/')) return <ImageIcon size={14} className="text-blue-500" />;
-    return <FileArchive size={14} className="text-yellow-600" />;
-  };
-
   const handleConfirmReimbursement = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -266,7 +296,14 @@ export default function Expenses() {
     } catch (err: any) { alert(err.message); }
   };
 
-  // 🛡️ MODIF : LE VERROU DE RENDU ANTI-CLIGNOTEMENT
+  const selectedCategory = categories.find(c => c.id.toString() === formData.category_id);
+
+  const getFileIcon = (base64: string) => {
+    if (base64.includes('application/pdf')) return <FileText size={14} className="text-red-500" />;
+    if (base64.includes('image/')) return <ImageIcon size={14} className="text-blue-500" />;
+    return <FileArchive size={14} className="text-yellow-600" />;
+  };
+
   if (authLoading || (loading && expenses.length === 0)) {
     return (
       <div className="flex h-[60vh] flex-col items-center justify-center">
@@ -349,6 +386,7 @@ export default function Expenses() {
         </div>
       </div>
 
+      {/* FORMULAIRE DE CRÉATION DE DÉPENSE */}
       {showForm && (
         <div className="bg-white shadow-xl rounded-3xl p-8 border border-blue-100 animate-in fade-in zoom-in duration-200">
           <h3 className="text-xl font-black text-gray-900 mb-6 uppercase tracking-tighter italic">Demande de paiement</h3>
@@ -379,10 +417,26 @@ export default function Expenses() {
               <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Description</label>
               <textarea rows={2} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="mt-1 block w-full border-2 border-gray-100 rounded-xl p-3 outline-none focus:border-blue-500 font-bold bg-gray-50" />
             </div>
+            
+            {/* DESIGN UNIVERSEL FICHIER / APPAREIL PHOTO */}
             <div className="sm:col-span-2">
               <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Pièce Jointe</label>
-              <input type="file" accept="image/*,.pdf,.zip,.rar" onChange={(e) => handleFileChange(e)} className="mt-1 block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+              <div className="flex gap-2 mt-1">
+                <label className="flex-1 flex flex-col items-center justify-center gap-1 bg-white border-2 border-dashed border-gray-200 text-gray-500 py-3 rounded-xl cursor-pointer hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                  <FileArchive size={18} />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Fichier</span>
+                  <input type="file" accept="image/*,.pdf,.zip,.rar" onChange={(e) => handleFileChange(e)} className="hidden" />
+                </label>
+                
+                {/* BOUTON CAMERA UNIVERSEL */}
+                <button type="button" onClick={() => openCamera('attachment')} className="flex-1 flex flex-col items-center justify-center gap-1 bg-white border-2 border-dashed border-gray-200 text-gray-500 py-3 rounded-xl cursor-pointer hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                  <Camera size={18} />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Photo</span>
+                </button>
+              </div>
+              {formData.attachment && <p className="text-[10px] text-green-600 font-black mt-2 text-center uppercase tracking-widest">✅ Document ajouté</p>}
             </div>
+
             <div className="sm:col-span-6 flex justify-end space-x-3 border-t pt-6">
               <button type="button" onClick={() => setShowForm(false)} className="py-3 px-6 font-bold text-gray-500 uppercase tracking-widest text-xs">Annuler</button>
               <button type="submit" className="bg-blue-600 py-3 px-10 rounded-xl font-black text-white hover:bg-blue-700 shadow-lg uppercase tracking-widest text-xs">Envoyer la demande</button>
@@ -391,6 +445,7 @@ export default function Expenses() {
         </div>
       )}
 
+      {/* TABLEAU DES DÉPENSES */}
       <div className="bg-white shadow-sm border border-gray-200 rounded-2xl overflow-hidden font-bold">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -422,7 +477,6 @@ export default function Expenses() {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div className="font-black tracking-tighter uppercase">{expense.description || '-'}</div>
                   
-                  {/* AFFICHAGE DU MOTIF DE REFUS */}
                   {expense.status === 'rejected' && expense.rejection_comment && (
                     <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded-md text-[10px] text-red-800 font-bold whitespace-normal">
                       Motif du refus : {expense.rejection_comment}
@@ -445,13 +499,11 @@ export default function Expenses() {
                         <CreditCard size={12}/> Preuve Paiement
                       </button>
                     )}
-                    {/* BADGE CARTE PRÊTÉE */}
                     {expense.card_lent_to && expense.status === 'approved' && (
                       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-orange-100 text-orange-800 text-[9px] font-black uppercase">
                         💳 Carte prêtée à {expense.card_lent_to}
                       </span>
                     )}
-                    {/* BADGE REMBOURSEMENT */}
                     {expense.payment_method && (
                       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-green-100 text-green-800 text-[9px] font-black uppercase">
                         💰 Remboursé par {expense.payment_method}
@@ -479,21 +531,18 @@ export default function Expenses() {
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <div className="flex justify-end space-x-2">
                     
-                    {/* BOUTON REMBOURSER (Icône Main avec pièces) */}
                     {(user?.role === 'admin' || user?.role === 'admin_level_1' || user?.role === 'secretary') && expense.status === 'approved' && !expense.card_lent_to && (
                       <button onClick={() => setShowReimburseModal(expense.id)} className="text-white bg-green-600 p-1.5 rounded-lg hover:bg-green-700 transition-colors shadow-sm" title="Rembourser manuellement">
                         <HandCoins size={16} />
                       </button>
                     )}
 
-                    {/* BOUTON : PRÊTER CARTE */}
                     {(user?.role === 'admin' || user?.role === 'admin_level_1' || user?.role === 'secretary') && expense.status === 'approved' && !expense.card_lent_to && (
                       <button onClick={() => setShowLendModal(expense.id)} className="text-white bg-orange-500 p-1.5 rounded-lg hover:bg-orange-600 transition-colors shadow-sm" title="Prêter la carte">
                         <UserPlus size={16} />
                       </button>
                     )}
 
-                    {/* BOUTON VIREMENT FAIT */}
                     {(user?.role === 'admin' || user?.role === 'admin_level_1' || user?.role === 'secretary') && expense.status === 'approved' && (
                       <button onClick={() => setShowPayModal(expense.id)} className="text-white bg-indigo-600 p-1.5 rounded-lg hover:bg-indigo-700" title="Marquer comme payé (Virement)">
                         <CreditCard size={16} />
@@ -577,13 +626,12 @@ export default function Expenses() {
         </div>
       )}
 
-      {/* MODAL VIREMENT EFFECTUÉ */}
+      {/* MODAL VIREMENT EFFECTUÉ (AVEC CAMERA) */}
       {showPayModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
           <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
             <h3 className="text-2xl font-black mb-2 uppercase tracking-tighter italic">Paiement effectué</h3>
             
-            {/* Si la carte a été prêtée, le texte change et on précise que c'est optionnel */}
             {expenses.find(e => e.id === showPayModal)?.card_lent_to ? (
               <p className="text-sm text-orange-600 mb-6 font-bold">
                 Carte récupérée de <b>{expenses.find(e => e.id === showPayModal)?.card_lent_to}</b>.<br/> 
@@ -594,14 +642,22 @@ export default function Expenses() {
             )}
 
             <form onSubmit={handleConfirmPayment} className="space-y-4">
-              {/* Le "required" disparaît si la carte était prêtée ! */}
-              <input 
-                type="file" 
-                required={!expenses.find(e => e.id === showPayModal)?.card_lent_to} 
-                accept="image/*,.pdf" 
-                onChange={(e) => handleFileChange(e, true)} 
-                className="w-full border-2 border-dashed rounded-xl p-6 font-bold text-xs" 
-              />
+              <div className="flex gap-2">
+                <label className="flex-1 flex flex-col items-center justify-center gap-2 bg-white border-2 border-dashed border-gray-200 text-gray-500 p-6 rounded-xl cursor-pointer hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
+                  <FileArchive size={24} />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Fichier</span>
+                  <input type="file" accept="image/*,.pdf" onChange={(e) => handleFileChange(e, true)} className="hidden" />
+                </label>
+
+                {/* BOUTON CAMERA UNIVERSEL POUR PREUVE */}
+                <button type="button" onClick={() => openCamera('paymentProof')} className="flex-1 flex flex-col items-center justify-center gap-2 bg-white border-2 border-dashed border-gray-200 text-gray-500 p-6 rounded-xl cursor-pointer hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
+                  <Camera size={24} />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Photo</span>
+                </button>
+              </div>
+              
+              {paymentProof && <p className="text-[10px] text-green-600 font-black mt-2 text-center uppercase tracking-widest">✅ Preuve ajoutée</p>}
+
               <div className="flex gap-3 pt-6">
                 <button type="button" onClick={() => setShowPayModal(null)} className="flex-1 py-3 font-bold text-gray-500">Annuler</button>
                 <button 
@@ -617,21 +673,38 @@ export default function Expenses() {
         </div>
       )}
 
-      {/* MODAL : PRÊT DE CARTE */}
+      {/* STUDIO PHOTO UNIVERSEL (LA VRAIE CAMÉRA) */}
+      {isCameraOpen && (
+        <div className="fixed inset-0 bg-black z-[200] flex flex-col items-center justify-center animate-in fade-in duration-200">
+          <div className="absolute top-6 right-6 z-10">
+            <button onClick={closeCamera} className="bg-gray-800 text-white p-3 rounded-full hover:bg-gray-700">
+              <X size={24} />
+            </button>
+          </div>
+          
+          <div className="w-full max-w-lg bg-black rounded-3xl overflow-hidden shadow-2xl relative flex items-center justify-center bg-gray-900 aspect-[3/4] md:aspect-video">
+             <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+          </div>
+
+          <div className="absolute bottom-10 left-0 right-0 flex justify-center pb-8">
+            <button 
+              onClick={takePhoto} 
+              className="w-20 h-20 bg-white rounded-full border-4 border-gray-300 flex items-center justify-center shadow-[0_0_0_4px_rgba(255,255,255,0.4)] hover:bg-gray-100 transition-colors active:scale-95"
+            >
+              <Aperture size={32} className="text-gray-800" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* AUTRES MODALES (PRÊT DE CARTE, REFUS, REMBOURSEMENT...) */}
       {showLendModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl animate-in zoom-in-95">
             <h3 className="text-2xl font-black mb-2 uppercase tracking-tighter italic text-orange-600">Prêter la carte</h3>
             <p className="text-sm text-gray-500 mb-6 font-bold">Indiquez à qui la carte de l'entreprise a été confiée.</p>
             <form onSubmit={handleLendCard} className="space-y-4">
-              <input 
-                type="text" 
-                placeholder="Ex: Jean Dupont" 
-                required 
-                value={lendName} 
-                onChange={(e) => setLendName(e.target.value)} 
-                className="w-full border-2 rounded-xl p-3 outline-none focus:border-orange-500 font-bold bg-gray-50" 
-              />
+              <input type="text" placeholder="Ex: Jean Dupont" required value={lendName} onChange={(e) => setLendName(e.target.value)} className="w-full border-2 rounded-xl p-3 outline-none focus:border-orange-500 font-bold bg-gray-50" />
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => setShowLendModal(null)} className="flex-1 py-3 font-bold text-gray-500">Annuler</button>
                 <button type="submit" className="flex-1 bg-orange-500 text-white py-3 rounded-xl font-black shadow-lg hover:bg-orange-600 transition-colors">Confirmer</button>
@@ -641,21 +714,13 @@ export default function Expenses() {
         </div>
       )}
 
-      {/* MODAL : REFUS DE DÉPENSE */}
       {showRejectModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
           <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
             <h3 className="text-2xl font-black mb-2 uppercase tracking-tighter italic text-red-600">Refuser la demande</h3>
             <p className="text-sm text-gray-500 mb-6 font-bold">Indiquez le motif du refus. L'employé recevra ce message dans ses notifications.</p>
             <form onSubmit={(e) => { e.preventDefault(); handleStatusUpdate(showRejectModal, 'rejected', rejectionComment); }} className="space-y-4">
-              <textarea 
-                placeholder="Ex: Justificatif manquant, hors budget, doublon..." 
-                required 
-                rows={3}
-                value={rejectionComment} 
-                onChange={(e) => setRejectionComment(e.target.value)} 
-                className="w-full border-2 rounded-xl p-3 outline-none focus:border-red-500 font-bold bg-gray-50 resize-none" 
-              />
+              <textarea placeholder="Ex: Justificatif manquant, hors budget, doublon..." required rows={3} value={rejectionComment} onChange={(e) => setRejectionComment(e.target.value)} className="w-full border-2 rounded-xl p-3 outline-none focus:border-red-500 font-bold bg-gray-50 resize-none" />
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => { setShowRejectModal(null); setRejectionComment(''); }} className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors">Annuler</button>
                 <button type="submit" className="flex-1 bg-red-500 text-white py-3 rounded-xl font-black shadow-lg hover:bg-red-600 transition-colors">Confirmer le refus</button>
@@ -665,21 +730,15 @@ export default function Expenses() {
         </div>
       )}
 
-      {/* MODAL : REMBOURSEMENT MANUEL */}
       {showReimburseModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[140] p-4">
           <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
             <h3 className="text-2xl font-black mb-2 uppercase tracking-tighter italic text-green-600">Confirmer le remboursement</h3>
-            <p className="text-sm text-gray-500 mb-6 font-bold">Cette action marquera la dépense comme payée. Les détails ci-dessous sont obligatoires.</p>
+            <p className="text-sm text-gray-500 mb-6 font-bold">Cette action marquera la dépense comme payée.</p>
             <form onSubmit={handleConfirmReimbursement} className="space-y-4">
               <div>
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Moyen de paiement</label>
-                <select 
-                  required 
-                  value={reimburseData.method} 
-                  onChange={(e) => setReimburseData({...reimburseData, method: e.target.value})}
-                  className="w-full border-2 rounded-xl p-3 outline-none focus:border-green-500 font-bold bg-gray-50"
-                >
+                <select required value={reimburseData.method} onChange={(e) => setReimburseData({...reimburseData, method: e.target.value})} className="w-full border-2 rounded-xl p-3 outline-none focus:border-green-500 font-bold bg-gray-50">
                   <option value="">Sélectionner...</option>
                   <option value="Espèces">Espèces</option>
                   <option value="Virement Personnel">Virement Personnel</option>
@@ -689,25 +748,17 @@ export default function Expenses() {
               </div>
               <div>
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Commentaire interne / Preuve</label>
-                <textarea 
-                  placeholder="Détails du remboursement (ex: Remis en main propre le...)" 
-                  required 
-                  rows={3}
-                  value={reimburseData.comment} 
-                  onChange={(e) => setReimburseData({...reimburseData, comment: e.target.value})} 
-                  className="w-full border-2 rounded-xl p-3 outline-none focus:border-green-500 font-bold bg-gray-50 resize-none" 
-                />
+                <textarea placeholder="Détails du remboursement..." required rows={3} value={reimburseData.comment} onChange={(e) => setReimburseData({...reimburseData, comment: e.target.value})} className="w-full border-2 rounded-xl p-3 outline-none focus:border-green-500 font-bold bg-gray-50 resize-none" />
               </div>
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => setShowReimburseModal(null)} className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors">Annuler</button>
-                <button type="submit" className="flex-1 bg-green-600 text-white py-3 rounded-xl font-black shadow-lg hover:bg-green-700 transition-colors">Valider le remboursement</button>
+                <button type="submit" className="flex-1 bg-green-600 text-white py-3 rounded-xl font-black shadow-lg hover:bg-green-700 transition-colors">Valider</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* PRÉVISUALISATION */}
       {previewFile && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 p-4 backdrop-blur-md" onClick={() => setPreviewFile(null)}>
           <div className="relative max-w-4xl w-full max-h-full flex flex-col items-center animate-in zoom-in duration-200">
